@@ -38,42 +38,57 @@ interface HoveredTooltipData {
   screenY: number;
 }
 
-interface AnimatedSatelliteMoon {
+interface AnimatedRadarPod {
+  group: THREE.Group;
+  outerRing: THREE.Mesh;
+  middleRing: THREE.Mesh;
+  ticksRing: THREE.Mesh;
+  baseBeam: THREE.Mesh;
+}
+
+interface AnimatedGearPair {
+  gearA: THREE.Mesh;
+  gearB: THREE.Mesh;
+}
+
+interface AnimatedSatelliteChip {
   mesh: THREE.Mesh;
   angle: number;
   speed: number;
   radius: number;
-  inclination: number;
+  line: THREE.Line;
+  labelSprite?: THREE.Sprite;
 }
 
-interface AnimatedPlanet {
+interface AnimatedPolyhedralCrystal {
   nodeId: string;
   status: NodeStatus;
   region: string;
   group: THREE.Group;
-  planetMesh: THREE.Mesh;
-  ringsMesh?: THREE.Mesh;
+  coreCrystal: THREE.Mesh;
+  outerWireframe: THREE.Mesh;
+  gimbalRingX?: THREE.Mesh;
+  gimbalRingZ?: THREE.Mesh;
+  accretionRing?: THREE.Mesh;
   stasisShieldMesh?: THREE.Mesh;
   stasisNeedles: THREE.Mesh[];
   beaconSpire?: THREE.Mesh;
-  satelliteMoons: AnimatedSatelliteMoon[];
-  orbitRingMesh?: THREE.Mesh;
+  radarPod: AnimatedRadarPod;
+  satelliteChips: AnimatedSatelliteChip[];
   sparkPoints?: THREE.Points;
   sparkAngles?: Float32Array;
   sparkHeights?: Float32Array;
   sparkSpeeds?: Float32Array;
+  barChartGroup?: THREE.Group;
+  gearsGroup?: AnimatedGearPair;
+  formulaSprite?: THREE.Sprite;
+  leaderLabel?: {
+    sprite: THREE.Sprite;
+    line: THREE.Line;
+  };
   rotationSpeed: number;
   basePos: THREE.Vector3;
   baseMaterials: THREE.Material[];
-}
-
-interface AnimatedGalacticCore {
-  group: THREE.Group;
-  sunCore: THREE.Mesh;
-  coronaMesh: THREE.Mesh;
-  accretionDisk: THREE.Mesh;
-  pointLight: THREE.PointLight;
-  regionName: string;
 }
 
 interface WarpCometPart {
@@ -81,7 +96,7 @@ interface WarpCometPart {
   trailOffset: number;
 }
 
-interface AnimatedWarpComet {
+interface AnimatedWarpConduit {
   curve: THREE.CatmullRomCurve3;
   parts: WarpCometPart[];
   speed: number;
@@ -106,6 +121,34 @@ interface ActiveLaserSurge {
   edgeId: string;
 }
 
+// Science and math formulas to project near specific nodes
+const MATHEMATICAL_FORMULAS: Record<string, string[]> = {
+  'AI & Neural Sanctuary': [
+    '∇L = ∂L/∂w',
+    'σ(z) = 1/(1+e⁻ᶻ)',
+    'ŷ = softmax(W·x + b)',
+    'mₜ = β₁mₜ₋₁ + (1-β₁)gₜ',
+  ],
+  'Frontend Archipelago': [
+    'gl_FragColor = vec4(rgb, 1.0)',
+    'M_proj · M_view · v_pos',
+    'O(1) Virtual DOM Reconciliation',
+    'f(t) = cubic-bezier(0.16, 1, 0.3, 1)',
+  ],
+  'Backend Citadel': [
+    'ACID: [Tx_begin → Commit]',
+    'RPS: 120,000 req/sec (p99 < 8ms)',
+    'SELECT * FROM dag_cte RECURSIVE',
+    'Redis::cluster.pipe_sync()',
+  ],
+  'Cybersecurity Bastion': [
+    'Ed25519: S = r + H(R,A,M)·x',
+    'SHA-256 HMAC::digest(nonce)',
+    'mTLS Handshake: Verified',
+    'STRIDE: [Spoofing, Tampering] = 0',
+  ],
+};
+
 export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   nodes,
   edges,
@@ -129,16 +172,16 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   const animFrameIdRef = useRef<number | null>(null);
 
   // Scene Hierarchy Groups
-  const galaxiesGroupRef = useRef<THREE.Group | null>(null);
+  const tableMatrixGroupRef = useRef<THREE.Group | null>(null);
+  const polyhedraGroupRef = useRef<THREE.Group | null>(null);
   const warpRoadsGroupRef = useRef<THREE.Group | null>(null);
   const selectionGroupRef = useRef<THREE.Group | null>(null);
   const shockwavesGroupRef = useRef<THREE.Group | null>(null);
 
   // Dynamic Scene Animations
   const interactiveHitboxesRef = useRef<THREE.Mesh[]>([]);
-  const animatedPlanetsRef = useRef<AnimatedPlanet[]>([]);
-  const animatedGalaxiesRef = useRef<AnimatedGalacticCore[]>([]);
-  const animatedCometsRef = useRef<AnimatedWarpComet[]>([]);
+  const animatedCrystalsRef = useRef<AnimatedPolyhedralCrystal[]>([]);
+  const animatedConduitsRef = useRef<AnimatedWarpConduit[]>([]);
   const activeShockwavesRef = useRef<ActiveShockwave[]>([]);
   const activeLaserSurgesRef = useRef<ActiveLaserSurge[]>([]);
   const radarSweepMeshRef = useRef<THREE.Mesh | null>(null);
@@ -152,7 +195,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   const mousePosRef = useRef<THREE.Vector2>(new THREE.Vector2());
   const hoveredNodeIdRef = useRef<string | null>(null);
   const [hoveredTooltip, setHoveredTooltip] = useState<HoveredTooltipData | null>(null);
-  const [viewMode, setViewMode] = useState<'isometric' | 'perspective' | 'topdown'>('isometric');
+  const [viewMode, setViewMode] = useState<'isometric' | 'perspective' | 'topdown'>('perspective');
 
   // Shared Raycaster
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
@@ -177,207 +220,9 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   // Texture Singletons & Generators
   const cachedTexturesRef = useRef<Map<string, THREE.CanvasTexture>>(new Map());
 
-  // 1. Procedural Terraformed Planet Canvas Texture (512 x 256)
-  const getTerraformedPlanetTexture = useCallback((themeColor: string): THREE.CanvasTexture => {
-    const key = `terraformed-${themeColor}`;
-    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Ocean Base Gradient
-      const oceanGrad = ctx.createLinearGradient(0, 0, 0, 256);
-      oceanGrad.addColorStop(0, '#02182b');
-      oceanGrad.addColorStop(0.5, '#053852');
-      oceanGrad.addColorStop(1, '#02182b');
-      ctx.fillStyle = oceanGrad;
-      ctx.fillRect(0, 0, 512, 256);
-
-      // Continent Landmasses
-      ctx.fillStyle = themeColor;
-      for (let i = 0; i < 18; i++) {
-        const cx = (i * 73 + 45) % 512;
-        const cy = 60 + ((i * 37) % 136);
-        const radius = 25 + (i % 5) * 8;
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Sub-islands
-        ctx.beginPath();
-        ctx.arc((cx + 25) % 512, cy + 15, radius * 0.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Golden Continental Accents
-      ctx.fillStyle = '#f59e0b';
-      for (let j = 0; j < 8; j++) {
-        const cx = (j * 110 + 20) % 512;
-        const cy = 80 + ((j * 40) % 100);
-        ctx.beginPath();
-        ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Atmospheric Cloud Swirls
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-      for (let c = 0; c < 12; c++) {
-        const y = 30 + c * 18;
-        ctx.fillRect(0, y, 512, 3 + (c % 4));
-      }
-
-      // Polar Ice Caps
-      ctx.fillStyle = '#e0f2fe';
-      ctx.fillRect(0, 0, 512, 16);
-      ctx.fillRect(0, 240, 512, 16);
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.needsUpdate = true;
-    cachedTexturesRef.current.set(key, texture);
-    return texture;
-  }, []);
-
-  // 2. Procedural Active Bioluminescent Planet Texture (512 x 256)
-  const getActivePlanetTexture = useCallback((themeColor: string): THREE.CanvasTexture => {
-    const key = `active-${themeColor}`;
-    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Midnight Tech Base
-      ctx.fillStyle = '#060d1a';
-      ctx.fillRect(0, 0, 512, 256);
-
-      // Bioluminescent Tectonic Grid Lines
-      ctx.strokeStyle = themeColor;
-      ctx.lineWidth = 1.8;
-      ctx.shadowColor = themeColor;
-      ctx.shadowBlur = 8;
-
-      // Latitude lines
-      for (let y = 32; y < 256; y += 32) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(512, y);
-        ctx.stroke();
-      }
-
-      // Longitude lines
-      for (let x = 32; x < 512; x += 48) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, 256);
-        ctx.stroke();
-      }
-
-      // Energy Nexus Nodes
-      ctx.fillStyle = '#38bdf8';
-      for (let n = 0; n < 24; n++) {
-        const nx = (n * 64 + 16) % 512;
-        const ny = (n * 32 + 16) % 256;
-        ctx.beginPath();
-        ctx.arc(nx, ny, 3.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.needsUpdate = true;
-    cachedTexturesRef.current.set(key, texture);
-    return texture;
-  }, []);
-
-  // 3. Procedural Cryo-Stasis Planet Texture (512 x 256)
-  const getCryoStasisPlanetTexture = useCallback((): THREE.CanvasTexture => {
-    const key = 'cryo-stasis';
-    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Dark Volcanic Obsidian Base
-      ctx.fillStyle = '#05070d';
-      ctx.fillRect(0, 0, 512, 256);
-
-      // Frozen Ice Cracks
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 1.2;
-      for (let i = 0; i < 20; i++) {
-        ctx.beginPath();
-        let curX = (i * 35) % 512;
-        let curY = 30 + (i * 15) % 200;
-        ctx.moveTo(curX, curY);
-        for (let s = 0; s < 5; s++) {
-          curX = (curX + 25) % 512;
-          curY = Math.max(10, Math.min(240, curY + (s % 2 === 0 ? 15 : -12)));
-          ctx.lineTo(curX, curY);
-        }
-        ctx.stroke();
-      }
-
-      // Crimson Stasis Latitude Warning Bands
-      ctx.fillStyle = 'rgba(244, 63, 94, 0.45)';
-      ctx.fillRect(0, 64, 512, 6);
-      ctx.fillRect(0, 128, 512, 8);
-      ctx.fillRect(0, 192, 512, 6);
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.needsUpdate = true;
-    cachedTexturesRef.current.set(key, texture);
-    return texture;
-  }, []);
-
-  // 4. Procedural Accretion Disk Ring Texture (1024 x 128)
-  const getAccretionRingTexture = useCallback((themeColor: string): THREE.CanvasTexture => {
-    const key = `accretion-${themeColor}`;
-    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, 1024, 128);
-      const grad = ctx.createLinearGradient(0, 0, 1024, 0);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(0.2, themeColor);
-      grad.addColorStop(0.5, '#ffffff');
-      grad.addColorStop(0.8, themeColor);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 1024, 128);
-
-      // Fine concentric division lines
-      ctx.fillStyle = 'rgba(2, 4, 10, 0.7)';
-      for (let x = 120; x < 900; x += 40) {
-        ctx.fillRect(x, 0, 8, 128);
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.needsUpdate = true;
-    cachedTexturesRef.current.set(key, texture);
-    return texture;
-  }, []);
-
-  // 5. Procedural Astrolabe Ground Vector Canvas Texture (2048 x 2048)
-  const getAstrolabeTexture = useCallback((): THREE.CanvasTexture => {
-    const key = 'astrolabe-grid';
+  // 1. Procedural Tactical Cyber-Table Grid Texture (2048 x 2048)
+  const getTacticalTableGridTexture = useCallback((): THREE.CanvasTexture => {
+    const key = 'tactical-table-grid';
     if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
 
     const canvas = document.createElement('canvas');
@@ -385,51 +230,101 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     canvas.height = 2048;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      ctx.clearRect(0, 0, 2048, 2048);
+      // Midnight obsidian specular table base
+      ctx.fillStyle = '#020409';
+      ctx.fillRect(0, 0, 2048, 2048);
+
       const cx = 1024;
       const cy = 1024;
 
-      // Concentric Celestial Astrolabe Rings
-      const ringRadii = [240, 460, 680, 880, 980];
+      // Fine coordinate grid lines
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
+      ctx.lineWidth = 1;
+      const step = 64;
+      for (let x = 0; x <= 2048; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 2048);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= 2048; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(2048, y);
+        ctx.stroke();
+      }
+
+      // Major coordinate division lines
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+      ctx.lineWidth = 2;
+      for (let x = 0; x <= 2048; x += 256) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, 2048);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= 2048; y += 256) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(2048, y);
+        ctx.stroke();
+      }
+
+      // Intersection Crosshairs (+)
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
+      ctx.lineWidth = 1.5;
+      for (let x = 128; x < 2048; x += 256) {
+        for (let y = 128; y < 2048; y += 256) {
+          ctx.beginPath();
+          ctx.moveTo(x - 8, y);
+          ctx.lineTo(x + 8, y);
+          ctx.moveTo(x, y - 8);
+          ctx.lineTo(x, y + 8);
+          ctx.stroke();
+        }
+      }
+
+      // Concentric Tactical Command Rings
+      const ringRadii = [240, 520, 800, 960];
       ringRadii.forEach((r, idx) => {
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.strokeStyle = idx % 2 === 0 ? 'rgba(56, 189, 248, 0.45)' : 'rgba(30, 41, 59, 0.6)';
+        ctx.strokeStyle = idx % 2 === 0 ? 'rgba(56, 189, 248, 0.45)' : 'rgba(168, 85, 247, 0.35)';
         ctx.lineWidth = idx === 3 ? 3 : 1.5;
         if (idx === 1 || idx === 3) {
-          ctx.setLineDash([8, 8]);
+          ctx.setLineDash([12, 12]);
         } else {
           ctx.setLineDash([]);
         }
         ctx.stroke();
       });
 
-      // Azimuth Radial Spokes & Degree Notches
+      // Azimuth radial notches & degree readouts
       ctx.setLineDash([]);
-      for (let deg = 0; deg < 360; deg += 10) {
+      for (let deg = 0; deg < 360; deg += 15) {
         const rad = (deg * Math.PI) / 180;
         const cos = Math.cos(rad);
         const sin = Math.sin(rad);
-        const isMajor = deg % 30 === 0;
+        const isMajor = deg % 45 === 0;
 
-        const innerR = isMajor ? 820 : 860;
-        const outerR = 880;
+        const innerR = isMajor ? 900 : 930;
+        const outerR = 960;
 
         ctx.beginPath();
         ctx.moveTo(cx + cos * innerR, cy + sin * innerR);
         ctx.lineTo(cx + cos * outerR, cy + sin * outerR);
-        ctx.strokeStyle = isMajor ? 'rgba(56, 189, 248, 0.85)' : 'rgba(56, 189, 248, 0.3)';
-        ctx.lineWidth = isMajor ? 2.5 : 1;
+        ctx.strokeStyle = isMajor ? 'rgba(56, 189, 248, 0.85)' : 'rgba(56, 189, 248, 0.35)';
+        ctx.lineWidth = isMajor ? 2.5 : 1.2;
         ctx.stroke();
 
         if (isMajor) {
-          const tx = cx + cos * 920;
-          const ty = cy + sin * 920;
+          const tx = cx + cos * 995;
+          const ty = cy + sin * 995;
           ctx.save();
           ctx.translate(tx, ty);
           ctx.rotate(rad + Math.PI / 2);
           ctx.font = 'bold 20px monospace';
-          ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.8)';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(`${deg}°`, 0, 0);
@@ -444,9 +339,9 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     return texture;
   }, []);
 
-  // 6. Procedural Holographic Radar Sweep Texture (1024 x 1024)
+  // 2. Procedural Holographic Radar Sweep Texture (1024 x 1024)
   const getRadarSweepTexture = useCallback((): THREE.CanvasTexture => {
-    const key = 'radar-sweep';
+    const key = 'radar-sweep-cyan';
     if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
 
     const canvas = document.createElement('canvas');
@@ -459,11 +354,11 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       const cy = 512;
       const radius = 500;
 
-      const sweepAngle = Math.PI / 3;
-      const step = 0.01;
+      const sweepAngle = Math.PI / 2.8;
+      const step = 0.012;
       for (let a = 0; a < sweepAngle; a += step) {
         const factor = a / sweepAngle;
-        const alpha = Math.pow(factor, 2.5) * 0.38;
+        const alpha = Math.pow(factor, 2.2) * 0.35;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.arc(cx, cy, radius, a - sweepAngle, a - sweepAngle + step + 0.005);
@@ -475,11 +370,222 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.lineTo(cx + radius, cy);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
       ctx.lineWidth = 2.5;
       ctx.shadowColor = '#22d3ee';
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 14;
       ctx.stroke();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    cachedTexturesRef.current.set(key, texture);
+    return texture;
+  }, []);
+
+  // 3. Procedural Radar Anchor Reticle Texture (512 x 512) for Node Table Base
+  const getRadarAnchorTexture = useCallback((themeColor: string): THREE.CanvasTexture => {
+    const key = `anchor-radar-${themeColor}`;
+    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 512, 512);
+      const cx = 256;
+      const cy = 256;
+
+      // Outer targeting bracket ring
+      ctx.strokeStyle = themeColor;
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = themeColor;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 220, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Dashed telemetry ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, 180, 0, Math.PI * 2);
+      ctx.setLineDash([16, 12]);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Inner solid glow circle
+      ctx.beginPath();
+      ctx.arc(cx, cy, 130, 0, Math.PI * 2);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Center glowing core dot
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 12, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 4 Precision Corner Crosshairs
+      for (let a = 0; a < 4; a++) {
+        const angle = (a * Math.PI) / 2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(cx + cos * 150, cy + sin * 150);
+        ctx.lineTo(cx + cos * 240, cy + sin * 240);
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    cachedTexturesRef.current.set(key, texture);
+    return texture;
+  }, []);
+
+  // 4. Procedural 3D Typography Leader Billboard (512 x 140)
+  const getLeaderLabelTexture = useCallback(
+    (node: MapNode, stepNum: string, themeColor: string): THREE.CanvasTexture => {
+      const key = `leader-${node.id}-${node.status}`;
+      if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 140;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, 512, 140);
+
+        // Dark glass background with rounded pill corners
+        ctx.fillStyle = 'rgba(2, 6, 18, 0.92)';
+        ctx.strokeStyle = themeColor;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = themeColor;
+        ctx.shadowBlur = 12;
+
+        ctx.beginPath();
+        ctx.roundRect(12, 12, 488, 116, 20);
+        ctx.fill();
+        ctx.stroke();
+
+        // Step number pill badge
+        ctx.fillStyle = themeColor;
+        ctx.beginPath();
+        ctx.roundRect(28, 28, 70, 32, 10);
+        ctx.fill();
+
+        ctx.font = 'bold 18px monospace';
+        ctx.fillStyle = '#020617';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(stepNum, 63, 44);
+
+        // Status pill
+        const statusText =
+          node.status === 'COMPLETED'
+            ? '85% COMPLETE'
+            : node.status === 'UNLOCKED'
+            ? 'HIGH PRIORITY'
+            : 'IN STASIS';
+        const statusColor =
+          node.status === 'COMPLETED'
+            ? '#10b981'
+            : node.status === 'UNLOCKED'
+            ? '#38bdf8'
+            : '#f43f5e';
+
+        ctx.font = 'bold 14px monospace';
+        ctx.fillStyle = statusColor;
+        ctx.textAlign = 'right';
+        ctx.fillText(statusText, 470, 44);
+
+        // Node Title
+        ctx.font = 'bold 22px system-ui, -apple-system, sans-serif';
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        const displayTitle =
+          node.title.length > 28 ? `${node.title.slice(0, 26)}...` : node.title;
+        ctx.fillText(displayTitle, 30, 94);
+
+        // XP tag
+        ctx.font = 'bold 16px monospace';
+        ctx.fillStyle = '#f59e0b';
+        ctx.textAlign = 'right';
+        ctx.fillText(`+${node.xpReward} XP`, 470, 94);
+      }
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      cachedTexturesRef.current.set(key, texture);
+      return texture;
+    },
+    []
+  );
+
+  // 5. Procedural Science & Math Formula Billboard (512 x 128)
+  const getFormulaTexture = useCallback((formulaText: string, color: string): THREE.CanvasTexture => {
+    const key = `formula-${formulaText}-${color}`;
+    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 512, 128);
+
+      // Holographic glowing frame
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8, 8]);
+      ctx.strokeRect(8, 8, 496, 112);
+      ctx.setLineDash([]);
+
+      // Formula typography with outer glow
+      ctx.font = 'bold 30px "Fira Code", monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+      ctx.fillText(formulaText, 256, 64);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    cachedTexturesRef.current.set(key, texture);
+    return texture;
+  }, []);
+
+  // 6. Procedural Subtask Chip Text Pill (256 x 64)
+  const getSubtaskLabelTexture = useCallback((title: string, completed: boolean): THREE.CanvasTexture => {
+    const key = `subtask-${title}-${completed}`;
+    if (cachedTexturesRef.current.has(key)) return cachedTexturesRef.current.get(key)!;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 256, 64);
+      ctx.fillStyle = 'rgba(2, 6, 18, 0.88)';
+      ctx.strokeStyle = completed ? '#10b981' : '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(8, 8, 240, 48, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillStyle = completed ? '#34d399' : '#e0f2fe';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const clean = title.length > 20 ? `${title.slice(0, 18)}...` : title;
+      ctx.fillText(clean, 128, 32);
     }
 
     const texture = new THREE.CanvasTexture(canvas);
@@ -504,7 +610,12 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
           const disposeMat = (mat: THREE.Material) => {
             if ('map' in mat) {
               const stdMat = mat as THREE.MeshStandardMaterial;
-              if (stdMat.map && !Array.from(cachedTexturesRef.current.values()).includes(stdMat.map as THREE.CanvasTexture)) {
+              if (
+                stdMat.map &&
+                !Array.from(cachedTexturesRef.current.values()).includes(
+                  stdMat.map as THREE.CanvasTexture
+                )
+              ) {
                 stdMat.map.dispose();
               }
             }
@@ -526,20 +637,20 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     });
   }, []);
 
-  // Smooth Camera Lerp Trigger with Asymmetric Viewport Framing when Drawer is Open
+  // Smooth Camera Lerp Trigger
   const focusCameraOnPosition = useCallback(
     (x: number, y: number, z: number, immediate = false, drawerOpen = false) => {
       const camera = cameraRef.current;
       const controls = controlsRef.current;
       if (!camera || !controls) return;
 
-      let camX = x + 18;
-      let camY = y + 15;
-      let camZ = z + 20;
+      let camX = x + 16;
+      let camY = y + 14;
+      let camZ = z + 18;
 
       if (viewMode === 'topdown') {
         camX = x;
-        camY = y + 75;
+        camY = y + 70;
         camZ = z + 0.1;
       } else if (viewMode === 'isometric') {
         camX = x + 24;
@@ -574,22 +685,20 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     [viewMode]
   );
 
-  // Reset Camera to 45-Degree Overview
+  // Reset Camera to Cinematic Command Overview
   const resetCameraToOverview = useCallback(() => {
-    targetCamPosRef.current.set(48, 56, 48);
-    targetControlsLookAtRef.current.set(0, 0, 0);
+    targetCamPosRef.current.set(38, 36, 42);
+    targetControlsLookAtRef.current.set(0, 2, 0);
     isTransitioningCameraRef.current = true;
     onRequestResetCamera?.();
   }, [onRequestResetCamera]);
 
-  // Handle external camera reset trigger
   useEffect(() => {
     if (cameraResetTrigger > 0) {
       resetCameraToOverview();
     }
   }, [cameraResetTrigger, resetCameraToOverview]);
 
-  // React to selectedNodeId and isDrawerOpen change
   useEffect(() => {
     if (!selectedNodeId) return;
     const targetNode = nodesMap.get(selectedNodeId);
@@ -613,7 +722,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       const { x, y, z } = completedNode.position;
       const now = performance.now() / 1000;
 
-      // Stage 1: Golden Planetary Shockwave Ring
+      // Stage 1: Golden Table Shockwave Ring
       const shockGeo = new THREE.RingGeometry(0.5, 1.4, 64);
       shockGeo.rotateX(-Math.PI / 2);
       const shockMat = new THREE.MeshBasicMaterial({
@@ -624,7 +733,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         depthWrite: false,
       });
       const shockMesh = new THREE.Mesh(shockGeo, shockMat);
-      shockMesh.position.set(x, y, z);
+      shockMesh.position.set(x, 0.08, z);
       shockMesh.scale.set(0.2, 0.2, 0.2);
       shockwavesGroup.add(shockMesh);
 
@@ -636,30 +745,32 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         maxScale: 28.0,
       });
 
-      // Stage 2: High-Velocity Warp Conduit Laser Surges along outgoing edges
+      // Stage 2: High-Velocity Laser Surge along outgoing conduits
       const outgoingEdges = edges.filter((e) => e.fromNodeId === completedNode.id);
       outgoingEdges.forEach((edge) => {
         const targetNode = nodesMap.get(edge.toNodeId);
         if (!targetNode) return;
 
         const pFrom = new THREE.Vector3(x, y, z);
-        const pTo = new THREE.Vector3(targetNode.position.x, targetNode.position.y, targetNode.position.z);
+        const pTo = new THREE.Vector3(
+          targetNode.position.x,
+          targetNode.position.y,
+          targetNode.position.z
+        );
         const dist = pFrom.distanceTo(pTo);
         const pMid = new THREE.Vector3().addVectors(pFrom, pTo).multiplyScalar(0.5);
-        pMid.y = Math.max(pFrom.y, pTo.y) + 3.0 + dist * 0.1;
+        pMid.y = Math.max(pFrom.y, pTo.y) + 2.5 + dist * 0.08;
         const surgeCurve = new THREE.CatmullRomCurve3([pFrom, pMid, pTo]);
 
-        // Laser surge head
-        const surgeHeadGeo = new THREE.SphereGeometry(0.5, 16, 16);
+        const surgeHeadGeo = new THREE.SphereGeometry(0.45, 16, 16);
         const surgeHeadMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
         const surgeHeadMesh = new THREE.Mesh(surgeHeadGeo, surgeHeadMat);
         surgeHeadMesh.position.copy(pFrom);
         shockwavesGroup.add(surgeHeadMesh);
 
-        // Trailing surge packets
         const trailMeshes: THREE.Mesh[] = [];
         for (let t = 0; t < 3; t++) {
-          const trailGeo = new THREE.SphereGeometry(0.35 - t * 0.08, 12, 12);
+          const trailGeo = new THREE.SphereGeometry(0.32 - t * 0.07, 12, 12);
           const trailMat = new THREE.MeshBasicMaterial({
             color: 0xfbbf24,
             transparent: true,
@@ -683,7 +794,6 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     [edges, nodesMap]
   );
 
-  // Monitor nodes to detect new completions
   useEffect(() => {
     const currentCompleted = new Set<string>();
     nodes.forEach((n) => {
@@ -710,18 +820,18 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
 
-    // 1. Deep Obsidian Space Scene
+    // Deep Obsidian Tactical Table Room
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(0x02040a);
-    scene.fog = new THREE.FogExp2(0x02040a, 0.0042);
+    scene.background = new THREE.Color(0x020409);
+    scene.fog = new THREE.FogExp2(0x020409, 0.0055);
 
-    // 2. Perspective Camera
-    const camera = new THREE.PerspectiveCamera(46, width / height, 0.5, 1200);
-    camera.position.set(48, 56, 48);
+    // Perspective Camera matching the tactile video vantage
+    const camera = new THREE.PerspectiveCamera(44, width / height, 0.5, 1000);
+    camera.position.set(38, 36, 42);
     cameraRef.current = camera;
 
-    // 3. WebGLRenderer with ACES Filmic Tone Mapping
+    // WebGLRenderer with ACES Filmic Tone Mapping & High Specularity
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       alpha: false,
@@ -730,32 +840,32 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.35;
+    renderer.toneMappingExposure = 1.45;
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
 
-    // 4. UnrealBloomPass Pipeline (Threshold: 0.78, Strength: 1.35)
+    // UnrealBloomPass Pipeline (Threshold: 0.72, Strength: 1.45, Radius: 0.45)
     const composer = new EffectComposer(renderer);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
 
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(width, height),
-      1.35, // strength: glowing planetary atmospheres & stellar coronas
-      0.42, // radius: tight, crisp glow halo
-      0.78  // threshold: triggers glow on true high emissives
+      1.45, // strength: high-end glowing polyhedral crystals & laser pulses
+      0.45, // radius: tight, crisp edge halo
+      0.72  // threshold: triggers glow on true emissives
     );
     composer.addPass(bloomPass);
     composerRef.current = composer;
 
-    // 5. OrbitControls
+    // OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.055;
-    controls.maxPolarAngle = Math.PI / 2 - 0.02;
-    controls.minDistance = 8;
-    controls.maxDistance = 250;
-    controls.target.set(0, 0, 0);
+    controls.maxPolarAngle = Math.PI / 2 - 0.02; // Prevent camera dipping below table
+    controls.minDistance = 6;
+    controls.maxDistance = 220;
+    controls.target.set(0, 2, 0);
     controlsRef.current = controls;
 
     const onControlsStart = () => {
@@ -763,11 +873,16 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     };
     controls.addEventListener('start', onControlsStart);
 
-    // 6. Scene Hierarchy Groups
-    const galaxiesGroup = new THREE.Group();
-    galaxiesGroup.name = 'galaxies-group';
-    scene.add(galaxiesGroup);
-    galaxiesGroupRef.current = galaxiesGroup;
+    // Scene Hierarchy Groups
+    const tableMatrixGroup = new THREE.Group();
+    tableMatrixGroup.name = 'table-matrix-group';
+    scene.add(tableMatrixGroup);
+    tableMatrixGroupRef.current = tableMatrixGroup;
+
+    const polyhedraGroup = new THREE.Group();
+    polyhedraGroup.name = 'polyhedra-group';
+    scene.add(polyhedraGroup);
+    polyhedraGroupRef.current = polyhedraGroup;
 
     const warpRoadsGroup = new THREE.Group();
     warpRoadsGroup.name = 'warp-roads-group';
@@ -784,101 +899,98 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     scene.add(shockwavesGroup);
     shockwavesGroupRef.current = shockwavesGroup;
 
-    // 7. Cinematic Ambient & Celestial Lights
-    const ambientLight = new THREE.AmbientLight(0x0b172a, 1.4);
+    // Cinematic Tactical Command Lighting
+    const ambientLight = new THREE.AmbientLight(0x0a1128, 1.6);
     scene.add(ambientLight);
 
-    const starClusterLight1 = new THREE.DirectionalLight(0x38bdf8, 2.5);
-    starClusterLight1.position.set(60, 80, 50);
-    scene.add(starClusterLight1);
+    const keyLight1 = new THREE.DirectionalLight(0x38bdf8, 2.8);
+    keyLight1.position.set(45, 60, 45);
+    scene.add(keyLight1);
 
-    const starClusterLight2 = new THREE.DirectionalLight(0xa855f7, 1.8);
-    starClusterLight2.position.set(-50, -30, -50);
-    scene.add(starClusterLight2);
+    const rimLight2 = new THREE.DirectionalLight(0xd946ef, 2.2);
+    rimLight2.position.set(-45, 30, -45);
+    scene.add(rimLight2);
 
-    // 8. Celestial Astrolabe Ground Plane at Y = -18
-    const groundDiscGeo = new THREE.CircleGeometry(180, 64);
-    groundDiscGeo.rotateX(-Math.PI / 2);
-    const groundDiscMat = new THREE.MeshStandardMaterial({
-      color: 0x020409,
-      roughness: 0.15,
-      metalness: 0.95,
+    // Dark Obsidian Tactical Glass Tabletop Surface at Y = 0
+    const tableGeo = new THREE.CircleGeometry(120, 64);
+    tableGeo.rotateX(-Math.PI / 2);
+    const tableMat = new THREE.MeshStandardMaterial({
+      color: 0x02050c,
+      roughness: 0.12,
+      metalness: 0.92,
     });
-    const groundDisc = new THREE.Mesh(groundDiscGeo, groundDiscMat);
-    groundDisc.position.y = -18.0;
-    scene.add(groundDisc);
+    const tableMesh = new THREE.Mesh(tableGeo, tableMat);
+    tableMesh.position.y = 0;
+    tableMatrixGroup.add(tableMesh);
 
-    // Astrolabe Grid Vector Overlay
-    const astrolabePlaneGeo = new THREE.PlaneGeometry(360, 360);
-    astrolabePlaneGeo.rotateX(-Math.PI / 2);
-    const astrolabeMat = new THREE.MeshBasicMaterial({
-      map: getAstrolabeTexture(),
+    // Table Grid Overlay with Crosshairs and Ticks
+    const gridOverlayGeo = new THREE.PlaneGeometry(240, 240);
+    gridOverlayGeo.rotateX(-Math.PI / 2);
+    const gridOverlayMat = new THREE.MeshBasicMaterial({
+      map: getTacticalTableGridTexture(),
       transparent: true,
-      opacity: 0.65,
+      opacity: 0.75,
       side: THREE.DoubleSide,
       depthWrite: false,
     });
-    const astrolabePlane = new THREE.Mesh(astrolabePlaneGeo, astrolabeMat);
-    astrolabePlane.position.y = -17.92;
-    scene.add(astrolabePlane);
+    const gridOverlay = new THREE.Mesh(gridOverlayGeo, gridOverlayMat);
+    gridOverlay.position.y = 0.02;
+    tableMatrixGroup.add(gridOverlay);
 
-    // Rotating 360-Degree Holographic Radar Plane Sweep
-    const radarGeo = new THREE.CircleGeometry(160, 64);
+    // Rotating 360-Degree Holographic Radar Sweep
+    const radarGeo = new THREE.CircleGeometry(110, 64);
     radarGeo.rotateX(-Math.PI / 2);
     const radarMat = new THREE.MeshBasicMaterial({
       map: getRadarSweepTexture(),
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.7,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
     const radarMesh = new THREE.Mesh(radarGeo, radarMat);
-    radarMesh.position.y = -17.85;
-    scene.add(radarMesh);
+    radarMesh.position.y = 0.04;
+    tableMatrixGroup.add(radarMesh);
     radarSweepMeshRef.current = radarMesh;
 
-    // 9. Two-Tier Cosmic Starfield: 1,200 Stars + 400 Nebula Dust Clouds
-    const starCount = 1200;
-    const starPositions = new Float32Array(starCount * 3);
-    const starColors = new Float32Array(starCount * 3);
-    const starPalette = [
+    // Ambient floating sparkling dust motes
+    const dustCount = 600;
+    const dustPositions = new Float32Array(dustCount * 3);
+    const dustColors = new Float32Array(dustCount * 3);
+    const dustPalette = [
       new THREE.Color(0x38bdf8),
-      new THREE.Color(0x818cf8),
+      new THREE.Color(0xd946ef),
       new THREE.Color(0xfbbf24),
-      new THREE.Color(0xf43f5e),
       new THREE.Color(0xffffff),
     ];
 
-    for (let i = 0; i < starCount; i++) {
-      const radius = 90 + Math.random() * 200;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(Math.random() * 2 - 1);
+    for (let i = 0; i < dustCount; i++) {
+      const radius = 10 + Math.random() * 85;
+      const angle = Math.random() * Math.PI * 2;
+      dustPositions[i * 3] = Math.cos(angle) * radius;
+      dustPositions[i * 3 + 1] = 0.5 + Math.random() * 16;
+      dustPositions[i * 3 + 2] = Math.sin(angle) * radius;
 
-      starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      starPositions[i * 3 + 1] = Math.max(-5, radius * Math.sin(phi) * Math.sin(theta));
-      starPositions[i * 3 + 2] = radius * Math.cos(phi);
-
-      const color = starPalette[Math.floor(Math.random() * starPalette.length)];
-      starColors[i * 3] = color.r;
-      starColors[i * 3 + 1] = color.g;
-      starColors[i * 3 + 2] = color.b;
+      const col = dustPalette[Math.floor(Math.random() * dustPalette.length)];
+      dustColors[i * 3] = col.r;
+      dustColors[i * 3 + 1] = col.g;
+      dustColors[i * 3 + 2] = col.b;
     }
 
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
-    const starMat = new THREE.PointsMaterial({
-      size: 1.8,
+    const dustGeo = new THREE.BufferGeometry();
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPositions, 3));
+    dustGeo.setAttribute('color', new THREE.BufferAttribute(dustColors, 3));
+    const dustMat = new THREE.PointsMaterial({
+      size: 1.4,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.75,
       depthWrite: false,
     });
-    const starPoints = new THREE.Points(starGeo, starMat);
-    scene.add(starPoints);
+    const dustPoints = new THREE.Points(dustGeo, dustMat);
+    scene.add(dustPoints);
 
-    // 10. Handle Window Resize
+    // Handle Window Resize
     const handleResize = () => {
       if (!container || !camera || !renderer || !composer) return;
       const w = container.clientWidth || window.innerWidth;
@@ -890,7 +1002,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // 11. 60 FPS Render & Physics Animation Loop
+    // 60 FPS Animation & Render Loop
     const clock = new THREE.Clock();
 
     const animate = () => {
@@ -916,547 +1028,756 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         controls.update();
       }
 
-      // Rotate Radar Sweep
+      // Rotate Main Holographic Radar Sweep on Table
       if (radarSweepMeshRef.current) {
         radarSweepMeshRef.current.rotation.z = -elapsedTime * 0.45;
       }
 
-      // Rotate Galactic Core Suns & Coronas
-      animatedGalaxiesRef.current.forEach((galaxy) => {
-        galaxy.sunCore.rotation.y = elapsedTime * 0.35;
-        galaxy.coronaMesh.rotation.y = -elapsedTime * 0.2;
-        const pulse = 1.0 + Math.sin(elapsedTime * 2.5) * 0.06;
-        galaxy.coronaMesh.scale.set(pulse, pulse, pulse);
-        galaxy.accretionDisk.rotation.z = elapsedTime * 0.18;
-      });
+      // Animate Polyhedral Crystals, Wireframes, Gimbals & Infographics
+      animatedCrystalsRef.current.forEach((crystal) => {
+        // Core crystal rotation
+        crystal.coreCrystal.rotation.y = elapsedTime * crystal.rotationSpeed;
+        crystal.coreCrystal.rotation.x = Math.sin(elapsedTime * 0.5) * 0.15;
 
-      // Animate Planets, Rings, Satellites, and Spires
-      animatedPlanetsRef.current.forEach((p) => {
-        // Planetary axial spin
-        p.planetMesh.rotation.y = elapsedTime * p.rotationSpeed;
+        // Outer wireframe counter-rotation
+        crystal.outerWireframe.rotation.y = -elapsedTime * (crystal.rotationSpeed * 0.75);
+        crystal.outerWireframe.rotation.z = elapsedTime * 0.4;
 
-        if (p.ringsMesh) {
-          p.ringsMesh.rotation.z = elapsedTime * 0.12;
+        // Gyroscopic gimbal rings
+        if (crystal.gimbalRingX) {
+          crystal.gimbalRingX.rotation.x = elapsedTime * 0.85;
+          crystal.gimbalRingX.rotation.y = elapsedTime * 0.35;
+        }
+        if (crystal.gimbalRingZ) {
+          crystal.gimbalRingZ.rotation.z = -elapsedTime * 0.75;
+          crystal.gimbalRingZ.rotation.y = -elapsedTime * 0.25;
         }
 
-        // Subtask Moonlet Satellites
-        p.satelliteMoons.forEach((moon) => {
-          moon.angle += moon.speed * delta;
-          const mx = Math.cos(moon.angle) * moon.radius;
-          const mz = Math.sin(moon.angle) * moon.radius;
-          const my = Math.sin(moon.angle + moon.inclination) * 0.4;
-          moon.mesh.position.set(mx, my, mz);
-          moon.mesh.rotation.y += delta * 1.5;
+        // Accretion ring for completed nodes
+        if (crystal.accretionRing) {
+          crystal.accretionRing.rotation.z = elapsedTime * 0.25;
+        }
+
+        // Radar base on table
+        crystal.radarPod.ticksRing.rotation.z = -elapsedTime * 0.65;
+        crystal.radarPod.middleRing.rotation.z = elapsedTime * 0.35;
+
+        // Stasis shield pulse for locked nodes
+        if (crystal.stasisShieldMesh) {
+          const shieldPulse = 1.0 + Math.sin(elapsedTime * 3.2) * 0.08;
+          crystal.stasisShieldMesh.scale.set(shieldPulse, shieldPulse, shieldPulse);
+          crystal.stasisShieldMesh.rotation.y = elapsedTime * 0.25;
+        }
+
+        // Subtask Satellite Diamond Chips
+        crystal.satelliteChips.forEach((chip) => {
+          chip.angle += chip.speed * delta;
+          const cx = Math.cos(chip.angle) * chip.radius;
+          const cz = Math.sin(chip.angle) * chip.radius;
+          const cy = Math.sin(chip.angle * 2) * 0.35;
+          chip.mesh.position.set(cx, cy, cz);
+          chip.mesh.rotation.y += delta * 2.0;
+
+          // Update radial filament line
+          const positions = chip.line.geometry.attributes.position as THREE.BufferAttribute;
+          positions.setXYZ(0, 0, 0, 0);
+          positions.setXYZ(1, cx, cy, cz);
+          positions.needsUpdate = true;
         });
 
-        // Stasis Shield & Needles for LOCKED planets
-        if (p.status === 'LOCKED' && p.stasisShieldMesh) {
-          p.stasisShieldMesh.rotation.y = elapsedTime * 0.4;
-          p.stasisShieldMesh.rotation.x = Math.sin(elapsedTime * 0.5) * 0.2;
-          const shieldMat = p.stasisShieldMesh.material as THREE.MeshBasicMaterial;
-          shieldMat.opacity = 0.35 + Math.sin(elapsedTime * 3.5) * 0.15;
+        // Golden Stardust Particles
+        if (
+          crystal.sparkPoints &&
+          crystal.sparkAngles &&
+          crystal.sparkHeights &&
+          crystal.sparkSpeeds
+        ) {
+          const posAttr = crystal.sparkPoints.geometry.attributes.position as THREE.BufferAttribute;
+          const posArray = posAttr.array as Float32Array;
 
-          p.stasisNeedles.forEach((needle, idx) => {
-            const needleMat = needle.material as THREE.MeshBasicMaterial;
-            needleMat.opacity = 0.65 + Math.sin(elapsedTime * 4.0 + idx) * 0.25;
-          });
-        }
-
-        // Ascended Golden Corona & Stardust for COMPLETED planets
-        if (p.status === 'COMPLETED') {
-          if (p.sparkPoints && p.sparkAngles && p.sparkHeights && p.sparkSpeeds) {
-            const posAttr = p.sparkPoints.geometry.attributes.position as THREE.BufferAttribute;
-            for (let s = 0; s < p.sparkAngles.length; s++) {
-              p.sparkHeights[s] = (p.sparkHeights[s] + delta * p.sparkSpeeds[s]) % 6.0;
-              p.sparkAngles[s] += delta * 1.6;
-              const sy = p.sparkHeights[s] - 1.0;
-              const sr = 2.4 * Math.max(0.3, 1.0 - sy / 8.0);
-              const sx = Math.cos(p.sparkAngles[s]) * sr;
-              const sz = Math.sin(p.sparkAngles[s]) * sr;
-              posAttr.setXYZ(s, sx, sy, sz);
+          for (let s = 0; s < crystal.sparkAngles.length; s++) {
+            crystal.sparkAngles[s] += delta * crystal.sparkSpeeds[s] * 0.5;
+            crystal.sparkHeights[s] += delta * 1.2;
+            if (crystal.sparkHeights[s] > 6.0) {
+              crystal.sparkHeights[s] = 0.0;
             }
-            posAttr.needsUpdate = true;
-          }
 
-          if (p.beaconSpire) {
-            const spireMat = p.beaconSpire.material as THREE.MeshBasicMaterial;
-            spireMat.opacity = 0.75 + Math.sin(elapsedTime * 4.0) * 0.2;
+            posArray[s * 3] = Math.cos(crystal.sparkAngles[s]) * 2.2;
+            posArray[s * 3 + 1] = crystal.sparkHeights[s] - 1.2;
+            posArray[s * 3 + 2] = Math.sin(crystal.sparkAngles[s]) * 2.2;
           }
+          posAttr.needsUpdate = true;
+        }
+
+        // Animate 3D Holographic Gears
+        if (crystal.gearsGroup) {
+          crystal.gearsGroup.gearA.rotation.z = elapsedTime * 1.2;
+          crystal.gearsGroup.gearB.rotation.z = -elapsedTime * 1.2;
+        }
+
+        // Floating science formula undulation
+        if (crystal.formulaSprite) {
+          crystal.formulaSprite.position.y = 2.8 + Math.sin(elapsedTime * 1.8) * 0.25;
+        }
+
+        // Leader label line update
+        if (crystal.leaderLabel) {
+          const leaderLine = crystal.leaderLabel.line;
+          const leaderPos = leaderLine.geometry.attributes.position as THREE.BufferAttribute;
+          leaderPos.setXYZ(0, 0, 1.6, 0); // apex of crystal
+          leaderPos.setXYZ(1, 2.2, 3.4, 0); // elbow
+          leaderPos.setXYZ(2, 3.8, 3.4, 0); // label anchor
+          leaderPos.needsUpdate = true;
         }
       });
 
-      // Animate Warp Conduits Photonic Comets
-      animatedCometsRef.current.forEach((comet) => {
-        const tHead = (elapsedTime * comet.speed + comet.offset) % 1.0;
-
-        comet.parts.forEach((part) => {
-          const rawT = tHead - part.trailOffset;
-          if (rawT < 0 || rawT > 1.0) {
-            part.mesh.visible = false;
-          } else {
-            part.mesh.visible = true;
-            const pt = comet.curve.getPointAt(rawT);
-            part.mesh.position.copy(pt);
-          }
+      // Animate Warp Conduits with Traveling Photons
+      animatedConduitsRef.current.forEach((conduit) => {
+        conduit.offset = (conduit.offset + conduit.speed * delta) % 1.0;
+        conduit.parts.forEach((part) => {
+          let t = conduit.offset - part.trailOffset;
+          if (t < 0) t += 1.0;
+          const point = conduit.curve.getPoint(t);
+          part.mesh.position.copy(point);
         });
       });
 
-      // Animate Laser Surges along Conduits
-      const survivingSurges: ActiveLaserSurge[] = [];
-      activeLaserSurgesRef.current.forEach((surge) => {
-        const elapsed = nowSec - surge.startTime;
-        const p = elapsed / surge.duration;
-
-        if (p < 0) {
-          survivingSurges.push(surge);
-        } else if (p < 1.0) {
-          const pt = surge.curve.getPointAt(p);
-          surge.headMesh.position.copy(pt);
-          surge.trailMeshes.forEach((trail, tIdx) => {
-            const tTrail = Math.max(0, p - (tIdx + 1) * 0.04);
-            trail.position.copy(surge.curve.getPointAt(tTrail));
-          });
-          survivingSurges.push(surge);
-        } else {
-          shockwavesGroupRef.current?.remove(surge.headMesh);
-          surge.trailMeshes.forEach((tm) => shockwavesGroupRef.current?.remove(tm));
-          surge.headMesh.geometry.dispose();
-          if (surge.headMesh.material instanceof THREE.Material) surge.headMesh.material.dispose();
-          surge.trailMeshes.forEach((tm) => {
-            tm.geometry.dispose();
-            if (tm.material instanceof THREE.Material) tm.material.dispose();
-          });
-        }
-      });
-      activeLaserSurgesRef.current = survivingSurges;
-
-      // Animate Active Shockwaves
-      const survivingShockwaves: ActiveShockwave[] = [];
+      // Animate Celebration Shockwaves
+      const remainingShockwaves: ActiveShockwave[] = [];
       activeShockwavesRef.current.forEach((sw) => {
-        const elapsed = nowSec - sw.startTime;
-        const p = elapsed / sw.duration;
-
-        if (p < 0) {
-          survivingShockwaves.push(sw);
-        } else if (p < 1.0) {
-          const currentScale = sw.initialScale + p * (sw.maxScale - sw.initialScale);
+        const progress = (nowSec - sw.startTime) / sw.duration;
+        if (progress >= 0 && progress <= 1.0) {
+          const currentScale = THREE.MathUtils.lerp(sw.initialScale, sw.maxScale, progress);
           sw.mesh.scale.set(currentScale, currentScale, currentScale);
           const mat = sw.mesh.material as THREE.MeshBasicMaterial;
-          mat.opacity = 0.95 * (1.0 - Math.pow(p, 1.8));
-          survivingShockwaves.push(sw);
-        } else {
-          shockwavesGroupRef.current?.remove(sw.mesh);
+          mat.opacity = (1.0 - progress) * 0.95;
+          remainingShockwaves.push(sw);
+        } else if (progress > 1.0) {
+          sw.mesh.parent?.remove(sw.mesh);
           sw.mesh.geometry.dispose();
-          if (sw.mesh.material instanceof THREE.Material) sw.mesh.material.dispose();
+          (sw.mesh.material as THREE.Material).dispose();
+        } else {
+          remainingShockwaves.push(sw);
         }
       });
-      activeShockwavesRef.current = survivingShockwaves;
+      activeShockwavesRef.current = remainingShockwaves;
 
-      // Render with UnrealBloomPass
-      if (composerRef.current) {
-        composerRef.current.render();
-      } else {
-        renderer.render(scene, camera);
-      }
+      // Animate Laser Surges along conduits
+      const remainingSurges: ActiveLaserSurge[] = [];
+      activeLaserSurgesRef.current.forEach((surge) => {
+        const progress = (nowSec - surge.startTime) / surge.duration;
+        if (progress >= 0 && progress <= 1.0) {
+          const headPos = surge.curve.getPoint(progress);
+          surge.headMesh.position.copy(headPos);
+
+          surge.trailMeshes.forEach((tm, idx) => {
+            const trailProgress = Math.max(0, progress - (idx + 1) * 0.04);
+            const trailPos = surge.curve.getPoint(trailProgress);
+            tm.position.copy(trailPos);
+          });
+          remainingSurges.push(surge);
+        } else if (progress > 1.0) {
+          surge.headMesh.parent?.remove(surge.headMesh);
+          surge.headMesh.geometry.dispose();
+          (surge.headMesh.material as THREE.Material).dispose();
+          surge.trailMeshes.forEach((tm) => {
+            tm.parent?.remove(tm);
+            tm.geometry.dispose();
+            (tm.material as THREE.Material).dispose();
+          });
+        } else {
+          remainingSurges.push(surge);
+        }
+      });
+      activeLaserSurgesRef.current = remainingSurges;
+
+      // Render Scene through UnrealBloomPass Composer
+      composer.render();
     };
 
-    animFrameIdRef.current = requestAnimationFrame(animate);
+    animate();
 
-    // Cleanup Lifecycle
     return () => {
-      if (animFrameIdRef.current !== null) {
-        cancelAnimationFrame(animFrameIdRef.current);
-      }
       window.removeEventListener('resize', handleResize);
-      controls.removeEventListener('start', onControlsStart);
+      if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       controls.dispose();
-
-      if (composerRef.current) {
-        composerRef.current.dispose();
-        composerRef.current = null;
-      }
-
-      cachedTexturesRef.current.forEach((tex) => tex.dispose());
-      cachedTexturesRef.current.clear();
-
-      disposeObjectHierarchy(scene);
       renderer.dispose();
-
+      composer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [disposeObjectHierarchy, getAstrolabeTexture, getRadarSweepTexture]);
+  }, [
+    getTacticalTableGridTexture,
+    getRadarSweepTexture,
+  ]);
 
   // -------------------------------------------------------------
-  // 2. Build Galactic Subject Star Systems & 3D Planets
+  // 2. Build 3D Polyhedral Crystals & Holographic Infographics
   // -------------------------------------------------------------
   useEffect(() => {
-    const galaxiesGroup = galaxiesGroupRef.current;
-    if (!galaxiesGroup) return;
+    const polyhedraGroup = polyhedraGroupRef.current;
+    if (!polyhedraGroup) return;
 
-    disposeObjectHierarchy(galaxiesGroup);
-    while (galaxiesGroup.children.length > 0) {
-      galaxiesGroup.remove(galaxiesGroup.children[0]);
+    disposeObjectHierarchy(polyhedraGroup);
+    while (polyhedraGroup.children.length > 0) {
+      polyhedraGroup.remove(polyhedraGroup.children[0]);
     }
     interactiveHitboxesRef.current = [];
-    animatedPlanetsRef.current = [];
-    animatedGalaxiesRef.current = [];
+    animatedCrystalsRef.current = [];
 
     // Distinct Region Names
     const regionNamesSet = new Set<string>();
     nodes.forEach((n) => regionNamesSet.add(n.region));
     Object.keys(REGIONS).forEach((reg) => regionNamesSet.add(reg));
 
-    regionNamesSet.forEach((regionName) => {
-      const theme = REGIONS[regionName] || {
-        name: regionName,
+    // Helper to generate a 3D gear mesh
+    const createGearMesh = (teeth = 8, radius = 0.7, color = 0x38bdf8): THREE.Mesh => {
+      const shape = new THREE.Shape();
+      const toothDepth = 0.18;
+      const stepAngle = (Math.PI * 2) / teeth;
+
+      for (let i = 0; i < teeth; i++) {
+        const a1 = i * stepAngle;
+        const a2 = a1 + stepAngle * 0.35;
+        const a3 = a1 + stepAngle * 0.65;
+        const a4 = (i + 1) * stepAngle;
+
+        const rIn = radius - toothDepth;
+        const rOut = radius + toothDepth;
+
+        if (i === 0) {
+          shape.moveTo(Math.cos(a1) * rIn, Math.sin(a1) * rIn);
+        } else {
+          shape.lineTo(Math.cos(a1) * rIn, Math.sin(a1) * rIn);
+        }
+        shape.lineTo(Math.cos(a2) * rOut, Math.sin(a2) * rOut);
+        shape.lineTo(Math.cos(a3) * rOut, Math.sin(a3) * rOut);
+        shape.lineTo(Math.cos(a4) * rIn, Math.sin(a4) * rIn);
+      }
+
+      // Center hole
+      const holePath = new THREE.Path();
+      holePath.absarc(0, 0, radius * 0.35, 0, Math.PI * 2, true);
+      shape.holes.push(holePath);
+
+      const extrudeSettings: THREE.ExtrudeGeometryOptions = {
+        depth: 0.12,
+        bevelEnabled: true,
+        bevelSegments: 2,
+        steps: 1,
+        bevelSize: 0.03,
+        bevelThickness: 0.03,
+      };
+
+      const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: 0.85,
+        roughness: 0.2,
+        metalness: 0.8,
+      });
+      return new THREE.Mesh(geo, mat);
+    };
+
+    nodes.forEach((node, nodeIdx) => {
+      const theme = REGIONS[node.region] || {
+        name: node.region,
         color: '#06b6d4',
         emissiveColor: '#22d3ee',
         center: { x: 0, y: 0, z: 0 },
-        description: 'Deep Space Subject Galaxy',
-        islandRadius: 24,
+        description: 'Command Hub',
+        islandRadius: 20,
       };
 
-      const regionNodes = nodes.filter((n) => n.region === regionName);
-      const completedCount = regionNodes.filter((n) => n.status === 'COMPLETED').length;
+      const { x, y, z } = node.position;
+      const crystalGroup = new THREE.Group();
+      crystalGroup.position.set(x, y, z);
+      crystalGroup.name = `crystal-${node.id}`;
+      polyhedraGroup.add(crystalGroup);
 
-      // Subject Galaxy Container Group
-      const galaxyGroup = new THREE.Group();
-      galaxyGroup.position.set(theme.center.x, theme.center.y, theme.center.z);
-      galaxiesGroup.add(galaxyGroup);
+      // A. Tactical Table Radar Pod (Anchored at Y = 0 on table surface)
+      const radarPodGroup = new THREE.Group();
+      radarPodGroup.position.set(0, -y + 0.05, 0); // table ground plane
+      crystalGroup.add(radarPodGroup);
 
-      // A. Central Galactic Core Sun
-      const sunGeo = new THREE.SphereGeometry(2.8, 32, 32);
-      const sunMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(theme.color),
-      });
-      const sunCore = new THREE.Mesh(sunGeo, sunMat);
-      sunCore.position.y = 2.0;
-      galaxyGroup.add(sunCore);
+      const anchorTexture = getRadarAnchorTexture(
+        node.status === 'COMPLETED' ? '#fbbf24' : theme.color
+      );
 
-      // B. Radiant Coronal Glow Shell
-      const coronaGeo = new THREE.SphereGeometry(4.0, 32, 32);
-      const coronaMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(theme.emissiveColor),
+      const outerRingGeo = new THREE.CircleGeometry(2.6, 32);
+      outerRingGeo.rotateX(-Math.PI / 2);
+      const outerRingMat = new THREE.MeshBasicMaterial({
+        map: anchorTexture,
         transparent: true,
-        opacity: 0.38,
-        side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
-      });
-      const coronaMesh = new THREE.Mesh(coronaGeo, coronaMat);
-      coronaMesh.position.y = 2.0;
-      galaxyGroup.add(coronaMesh);
-
-      // C. Rotating Stellar Accretion Disk Ring
-      const accretionGeo = new THREE.RingGeometry(4.2, 8.8, 64);
-      accretionGeo.rotateX(-Math.PI / 2 + 0.35); // Tilted accretion plane
-      const accretionMat = new THREE.MeshBasicMaterial({
-        map: getAccretionRingTexture(theme.color),
-        transparent: true,
-        opacity: 0.85,
+        opacity: node.status === 'COMPLETED' ? 0.9 : 0.75,
         side: THREE.DoubleSide,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
-      const accretionDisk = new THREE.Mesh(accretionGeo, accretionMat);
-      accretionDisk.position.y = 2.0;
-      galaxyGroup.add(accretionDisk);
+      const outerRingMesh = new THREE.Mesh(outerRingGeo, outerRingMat);
+      radarPodGroup.add(outerRingMesh);
 
-      // D. PointLight illuminating nearby planetary orbits
-      const sunPointLight = new THREE.PointLight(new THREE.Color(theme.color), 35, 60);
-      sunPointLight.position.y = 2.0;
-      galaxyGroup.add(sunPointLight);
-
-      // E. Floating Galactic Title Sprite
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, 512, 128);
-        ctx.fillStyle = 'rgba(2, 6, 18, 0.88)';
-        ctx.strokeStyle = theme.color;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.roundRect(16, 16, 480, 96, 18);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.font = 'bold 26px system-ui, -apple-system, sans-serif';
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.shadowColor = theme.color;
-        ctx.shadowBlur = 12;
-        ctx.fillText(theme.name.toUpperCase(), 256, 48);
-
-        ctx.font = '600 16px monospace';
-        ctx.fillStyle = '#38bdf8';
-        ctx.fillText(`SECTOR • ${completedCount}/${regionNodes.length} TERRAFORMED`, 256, 80);
-      }
-
-      const spriteTexture = new THREE.CanvasTexture(canvas);
-      spriteTexture.needsUpdate = true;
-      const spriteMat = new THREE.SpriteMaterial({
-        map: spriteTexture,
+      const middleRingGeo = new THREE.RingGeometry(1.6, 1.8, 32);
+      middleRingGeo.rotateX(-Math.PI / 2);
+      const middleRingMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(theme.color),
         transparent: true,
-        opacity: 0.92,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
         depthWrite: false,
       });
-      const sprite = new THREE.Sprite(spriteMat);
-      sprite.scale.set(16, 4, 1);
-      sprite.position.set(0, 10.5, 0);
-      galaxyGroup.add(sprite);
+      const middleRingMesh = new THREE.Mesh(middleRingGeo, middleRingMat);
+      radarPodGroup.add(middleRingMesh);
 
-      animatedGalaxiesRef.current.push({
-        group: galaxyGroup,
-        sunCore,
-        coronaMesh,
-        accretionDisk,
-        pointLight: sunPointLight,
-        regionName,
+      const ticksRingGeo = new THREE.RingGeometry(2.8, 3.0, 32);
+      ticksRingGeo.rotateX(-Math.PI / 2);
+      const ticksRingMat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(theme.emissiveColor),
+        transparent: true,
+        opacity: 0.8,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const ticksRingMesh = new THREE.Mesh(ticksRingGeo, ticksRingMat);
+      radarPodGroup.add(ticksRingMesh);
+
+      // Vertical Holographic Light Pillar Beam connecting table pod to floating crystal
+      const beamGeo = new THREE.CylinderGeometry(0.04, 0.04, y, 8);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: node.status === 'COMPLETED' ? 0xfbbf24 : new THREE.Color(theme.emissiveColor),
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const baseBeam = new THREE.Mesh(beamGeo, beamMat);
+      baseBeam.position.y = -y / 2;
+      crystalGroup.add(baseBeam);
+
+      const radarPod: AnimatedRadarPod = {
+        group: radarPodGroup,
+        outerRing: outerRingMesh,
+        middleRing: middleRingMesh,
+        ticksRing: ticksRingMesh,
+        baseBeam,
+      };
+
+      // B. Core Polyhedral Crystal Geometry & Specular Faceted Material
+      let coreGeo: THREE.BufferGeometry;
+      let outerWireGeo: THREE.BufferGeometry;
+      let coreMat: THREE.Material;
+      let outerWireMat: THREE.Material;
+
+      let gimbalRingX: THREE.Mesh | undefined;
+      let gimbalRingZ: THREE.Mesh | undefined;
+      let accretionRing: THREE.Mesh | undefined;
+      let stasisShieldMesh: THREE.Mesh | undefined;
+      const stasisNeedles: THREE.Mesh[] = [];
+      let beaconSpire: THREE.Mesh | undefined;
+      let sparkPoints: THREE.Points | undefined;
+      let sparkAngles: Float32Array | undefined;
+      let sparkHeights: Float32Array | undefined;
+      let sparkSpeeds: Float32Array | undefined;
+
+      if (node.status === 'COMPLETED') {
+        // Radiant Golden Geodesic Icosahedron
+        coreGeo = new THREE.IcosahedronGeometry(1.5, 1);
+        outerWireGeo = new THREE.IcosahedronGeometry(1.9, 1);
+
+        coreMat = new THREE.MeshStandardMaterial({
+          color: 0xf59e0b,
+          emissive: 0xfbbf24,
+          emissiveIntensity: 1.4,
+          roughness: 0.12,
+          metalness: 0.88,
+          flatShading: true,
+        });
+
+        outerWireMat = new THREE.MeshBasicMaterial({
+          color: 0xfde047,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.85,
+        });
+
+        // Saturn-like Accretion Ring around completed crystal
+        const ringGeo = new THREE.RingGeometry(2.1, 3.4, 48);
+        ringGeo.rotateX(-Math.PI / 2 + 0.35);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xfbbf24,
+          transparent: true,
+          opacity: 0.75,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        accretionRing = new THREE.Mesh(ringGeo, ringMat);
+        crystalGroup.add(accretionRing);
+
+        // Ascended Sky Laser Spire
+        const spireGeo = new THREE.CylinderGeometry(0.06, 0.06, 40, 12, 1, true);
+        const spireMat = new THREE.MeshBasicMaterial({
+          color: 0xfbbf24,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        beaconSpire = new THREE.Mesh(spireGeo, spireMat);
+        beaconSpire.position.y = 20;
+        crystalGroup.add(beaconSpire);
+
+        // 36 Golden Stardust Particles
+        const sparkCount = 36;
+        const posArr = new Float32Array(sparkCount * 3);
+        sparkAngles = new Float32Array(sparkCount);
+        sparkHeights = new Float32Array(sparkCount);
+        sparkSpeeds = new Float32Array(sparkCount);
+
+        for (let s = 0; s < sparkCount; s++) {
+          sparkAngles[s] = Math.random() * Math.PI * 2;
+          sparkHeights[s] = Math.random() * 6.0;
+          sparkSpeeds[s] = 1.0 + Math.random() * 2.2;
+          posArr[s * 3] = Math.cos(sparkAngles[s]) * 2.5;
+          posArr[s * 3 + 1] = sparkHeights[s] - 1.2;
+          posArr[s * 3 + 2] = Math.sin(sparkAngles[s]) * 2.5;
+        }
+
+        const sparkGeo = new THREE.BufferGeometry();
+        sparkGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+        const sparkMat = new THREE.PointsMaterial({
+          color: 0xfde047,
+          size: 1.8,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        sparkPoints = new THREE.Points(sparkGeo, sparkMat);
+        crystalGroup.add(sparkPoints);
+      } else if (node.status === 'UNLOCKED') {
+        // High-Energy Vibrant Octahedron Crystal (Fuchsia/Magenta or Cyan)
+        coreGeo = new THREE.OctahedronGeometry(1.6, 0);
+        outerWireGeo = new THREE.OctahedronGeometry(1.95, 0);
+
+        const isMagenta = nodeIdx % 2 === 0;
+        const nodeColor = isMagenta ? 0xd946ef : new THREE.Color(theme.color);
+        const glowColor = isMagenta ? 0xf43f5e : new THREE.Color(theme.emissiveColor);
+
+        coreMat = new THREE.MeshStandardMaterial({
+          color: nodeColor,
+          emissive: glowColor,
+          emissiveIntensity: 1.35,
+          roughness: 0.15,
+          metalness: 0.85,
+          flatShading: true,
+        });
+
+        outerWireMat = new THREE.MeshBasicMaterial({
+          color: glowColor,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.8,
+        });
+
+        // Dual Orthogonal Gyroscopic Gimbal Rings
+        const ringXGeo = new THREE.RingGeometry(2.1, 2.25, 48);
+        const ringXMat = new THREE.MeshBasicMaterial({
+          color: glowColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.75,
+          blending: THREE.AdditiveBlending,
+        });
+        gimbalRingX = new THREE.Mesh(ringXGeo, ringXMat);
+        crystalGroup.add(gimbalRingX);
+
+        const ringZGeo = new THREE.RingGeometry(2.35, 2.5, 48);
+        ringZGeo.rotateX(Math.PI / 2);
+        const ringZMat = new THREE.MeshBasicMaterial({
+          color: glowColor,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.75,
+          blending: THREE.AdditiveBlending,
+        });
+        gimbalRingZ = new THREE.Mesh(ringZGeo, ringZMat);
+        crystalGroup.add(gimbalRingZ);
+      } else {
+        // Locked Stasis Octahedron with Crimson Shield
+        coreGeo = new THREE.OctahedronGeometry(1.5, 0);
+        outerWireGeo = new THREE.OctahedronGeometry(1.8, 0);
+
+        coreMat = new THREE.MeshStandardMaterial({
+          color: 0x1e293b,
+          emissive: 0xf43f5e,
+          emissiveIntensity: 0.35,
+          roughness: 0.75,
+          metalness: 0.45,
+          flatShading: true,
+        });
+
+        outerWireMat = new THREE.MeshBasicMaterial({
+          color: 0x475569,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.45,
+        });
+
+        // Crimson Geodesic Wireframe Shield Cage
+        const shieldGeo = new THREE.IcosahedronGeometry(2.2, 2);
+        const shieldMat = new THREE.MeshBasicMaterial({
+          color: 0xf43f5e,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.55,
+          depthWrite: false,
+        });
+        stasisShieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+        crystalGroup.add(stasisShieldMesh);
+
+        // 4 Crimson Laser Containment Needles
+        for (let l = 0; l < 4; l++) {
+          const angle = (l * Math.PI) / 2;
+          const needleGeo = new THREE.CylinderGeometry(0.04, 0.04, 4.4, 8);
+          const needleMat = new THREE.MeshBasicMaterial({
+            color: 0xff1e42,
+            transparent: true,
+            opacity: 0.85,
+          });
+          const needle = new THREE.Mesh(needleGeo, needleMat);
+          needle.position.set(Math.cos(angle) * 2.3, 0, Math.sin(angle) * 2.3);
+          crystalGroup.add(needle);
+          stasisNeedles.push(needle);
+        }
+      }
+
+      const coreCrystal = new THREE.Mesh(coreGeo, coreMat);
+      crystalGroup.add(coreCrystal);
+
+      const outerWireframe = new THREE.Mesh(outerWireGeo, outerWireMat);
+      crystalGroup.add(outerWireframe);
+
+      // Core point light casting vibrant illumination onto conduits and table
+      const pointLight = new THREE.PointLight(
+        node.status === 'COMPLETED' ? 0xfbbf24 : new THREE.Color(theme.color),
+        25,
+        35
+      );
+      pointLight.position.set(0, 0, 0);
+      crystalGroup.add(pointLight);
+
+      // Invisible Raycast Hitbox
+      const hitboxGeo = new THREE.SphereGeometry(2.8, 16, 16);
+      const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+      const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
+      hitbox.userData = { nodeId: node.id };
+      crystalGroup.add(hitbox);
+      interactiveHitboxesRef.current.push(hitbox);
+
+      // C. 3D Holographic Mini Bar Chart (Matching Reference Frames 5, 7, 9)
+      let barChartGroup: THREE.Group | undefined;
+      if (nodeIdx % 3 === 0 || node.id === 'ai-neural-nets' || node.id === 'fe-typescript-strict') {
+        barChartGroup = new THREE.Group();
+        barChartGroup.position.set(2.4, 1.4, -1.2);
+        crystalGroup.add(barChartGroup);
+
+        const barHeights = [0.6, 1.1, 1.8, 1.4, 2.2];
+        const barPoints: THREE.Vector3[] = [];
+
+        barHeights.forEach((bh, bIdx) => {
+          const bx = (bIdx - 2) * 0.45;
+          const barGeo = new THREE.BoxGeometry(0.25, bh, 0.25);
+          const barMat = new THREE.MeshStandardMaterial({
+            color: 0x06b6d4,
+            emissive: 0x22d3ee,
+            emissiveIntensity: 1.5,
+            roughness: 0.15,
+            metalness: 0.85,
+          });
+          const barMesh = new THREE.Mesh(barGeo, barMat);
+          barMesh.position.set(bx, bh / 2, 0);
+          barChartGroup!.add(barMesh);
+
+          barPoints.push(new THREE.Vector3(bx, bh + 0.1, 0));
+        });
+
+        // Top Trendline Spline over bars
+        const trendCurve = new THREE.CatmullRomCurve3(barPoints);
+        const trendGeo = new THREE.TubeGeometry(trendCurve, 32, 0.04, 8, false);
+        const trendMat = new THREE.MeshBasicMaterial({
+          color: 0x38bdf8,
+          transparent: true,
+          opacity: 0.95,
+        });
+        const trendMesh = new THREE.Mesh(trendGeo, trendMat);
+        barChartGroup.add(trendMesh);
+      }
+
+      // D. 3D Holographic Interlocking Gears (Matching Optimization Nodes)
+      let gearsGroup: AnimatedGearPair | undefined;
+      if (
+        node.id === 'ai-neural-nets' ||
+        node.id === 'be-node-runtime' ||
+        node.title.toLowerCase().includes('optimi')
+      ) {
+        const gearA = createGearMesh(8, 0.65, 0x38bdf8);
+        gearA.position.set(-2.0, 1.6, 1.2);
+        crystalGroup.add(gearA);
+
+        const gearB = createGearMesh(8, 0.65, 0xa855f7);
+        gearB.position.set(-1.0, 2.2, 1.2);
+        crystalGroup.add(gearB);
+
+        gearsGroup = { gearA, gearB };
+      }
+
+      // E. Science & Math Formula Billboard (Frames 7, 9)
+      let formulaSprite: THREE.Sprite | undefined;
+      const formulas = MATHEMATICAL_FORMULAS[node.region] || [];
+      if (formulas.length > 0) {
+        const formulaText = formulas[nodeIdx % formulas.length];
+        const formTexture = getFormulaTexture(formulaText, theme.emissiveColor);
+        const formMat = new THREE.SpriteMaterial({
+          map: formTexture,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        formulaSprite = new THREE.Sprite(formMat);
+        formulaSprite.scale.set(7.5, 1.85, 1);
+        formulaSprite.position.set(0, 2.8, 1.4);
+        crystalGroup.add(formulaSprite);
+      }
+
+      // F. 3D Typography Leader Badge (Frames 1, 5, 9)
+      const stepNumber = `#${String(nodeIdx + 1).padStart(2, '0')}`;
+      const leaderTexture = getLeaderLabelTexture(node, stepNumber, theme.color);
+      const leaderMat = new THREE.SpriteMaterial({
+        map: leaderTexture,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      });
+      const leaderSprite = new THREE.Sprite(leaderMat);
+      leaderSprite.scale.set(8.5, 2.3, 1);
+      leaderSprite.position.set(3.8, 3.4, 0);
+      crystalGroup.add(leaderSprite);
+
+      // Angled leader line connecting crystal to label
+      const lineGeo = new THREE.BufferGeometry();
+      const linePoints = new Float32Array([
+        0, 1.6, 0, // Apex of crystal
+        2.2, 3.4, 0, // Elbow
+        3.8, 3.4, 0, // Sprite anchor
+      ]);
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(linePoints, 3));
+      const lineMat = new THREE.LineBasicMaterial({
+        color: new THREE.Color(theme.color),
+        transparent: true,
+        opacity: 0.85,
+        linewidth: 2,
+      });
+      const leaderLine = new THREE.Line(lineGeo, lineMat);
+      crystalGroup.add(leaderLine);
+
+      // G. Subtask Radial Concept Diamond Chips
+      const satelliteChips: AnimatedSatelliteChip[] = [];
+      const subTasks = node.subTasks || [];
+      subTasks.forEach((st, stIdx) => {
+        const chipRadius = 3.2 + stIdx * 0.7;
+        const chipGeo = new THREE.OctahedronGeometry(0.36, 0);
+        const chipMat = new THREE.MeshStandardMaterial({
+          color: st.completed ? 0x10b981 : 0x38bdf8,
+          emissive: st.completed ? 0x34d399 : 0x0284c7,
+          emissiveIntensity: st.completed ? 1.6 : 1.0,
+          roughness: 0.2,
+          metalness: 0.85,
+          flatShading: true,
+        });
+        const chipMesh = new THREE.Mesh(chipGeo, chipMat);
+        crystalGroup.add(chipMesh);
+
+        // Radial filament line from center to chip
+        const filamentGeo = new THREE.BufferGeometry();
+        const filamentPts = new Float32Array([0, 0, 0, 0, 0, 0]);
+        filamentGeo.setAttribute('position', new THREE.BufferAttribute(filamentPts, 3));
+        const filamentMat = new THREE.LineBasicMaterial({
+          color: st.completed ? 0x34d399 : 0x38bdf8,
+          transparent: true,
+          opacity: 0.75,
+        });
+        const filamentLine = new THREE.Line(filamentGeo, filamentMat);
+        crystalGroup.add(filamentLine);
+
+        // Subtask floating mini label pill
+        const subLabelTex = getSubtaskLabelTexture(st.title, st.completed);
+        const subLabelMat = new THREE.SpriteMaterial({
+          map: subLabelTex,
+          transparent: true,
+          opacity: 0.88,
+          depthWrite: false,
+        });
+        const subLabelSprite = new THREE.Sprite(subLabelMat);
+        subLabelSprite.scale.set(3.2, 0.8, 1);
+        chipMesh.add(subLabelSprite);
+        subLabelSprite.position.set(0, 0.65, 0);
+
+        satelliteChips.push({
+          mesh: chipMesh,
+          angle: (stIdx * Math.PI) / 2 + nodeIdx * 0.5,
+          speed: 0.8 + stIdx * 0.3,
+          radius: chipRadius,
+          line: filamentLine,
+          labelSprite: subLabelSprite,
+        });
       });
 
-      // F. Construct 3D Celestial Planets for nodes in this galaxy
-      regionNodes.forEach((node, nodeIdx) => {
-        const localX = node.position.x - theme.center.x;
-        const localY = node.position.y - theme.center.y;
-        const localZ = node.position.z - theme.center.z;
-        const orbitRadius = Math.sqrt(localX * localX + localZ * localZ);
-
-        const planetGroup = new THREE.Group();
-        planetGroup.position.set(localX, localY, localZ);
-        planetGroup.name = `planet-${node.id}`;
-        galaxyGroup.add(planetGroup);
-
-        // Keplerian Orbit Ring around central star
-        if (orbitRadius > 3.0) {
-          const orbitGeo = new THREE.RingGeometry(orbitRadius - 0.06, orbitRadius + 0.06, 64);
-          orbitGeo.rotateX(-Math.PI / 2);
-          const orbitMat = new THREE.MeshBasicMaterial({
-            color: node.status === 'COMPLETED' ? 0xfbbf24 : node.status === 'UNLOCKED' ? 0x06b6d4 : 0x1e293b,
-            transparent: true,
-            opacity: node.status === 'LOCKED' ? 0.25 : 0.65,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-          });
-          const orbitMesh = new THREE.Mesh(orbitGeo, orbitMat);
-          orbitMesh.position.y = 0.1;
-          galaxyGroup.add(orbitMesh);
-        }
-
-        // Planetary Body (SphereGeometry 1.65 radius)
-        const planetGeo = new THREE.SphereGeometry(1.65, 32, 32);
-        let planetMat: THREE.Material;
-
-        if (node.status === 'COMPLETED') {
-          planetMat = new THREE.MeshStandardMaterial({
-            map: getTerraformedPlanetTexture(theme.color),
-            roughness: 0.25,
-            metalness: 0.75,
-            emissive: new THREE.Color(0xf59e0b),
-            emissiveIntensity: 0.45,
-          });
-        } else if (node.status === 'UNLOCKED') {
-          planetMat = new THREE.MeshStandardMaterial({
-            map: getActivePlanetTexture(theme.color),
-            roughness: 0.35,
-            metalness: 0.85,
-            emissive: new THREE.Color(theme.emissiveColor),
-            emissiveIntensity: 0.65,
-          });
-        } else {
-          planetMat = new THREE.MeshStandardMaterial({
-            map: getCryoStasisPlanetTexture(),
-            roughness: 0.75,
-            metalness: 0.55,
-            emissive: new THREE.Color(0xf43f5e),
-            emissiveIntensity: 0.25,
-          });
-        }
-
-        const planetMesh = new THREE.Mesh(planetGeo, planetMat);
-        planetMesh.rotation.z = (23.5 * Math.PI) / 180; // Earth-like axial tilt
-        planetGroup.add(planetMesh);
-
-        // Invisible Raycast Hitbox
-        const hitboxGeo = new THREE.SphereGeometry(2.8, 16, 16);
-        const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
-        const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-        hitbox.userData = { nodeId: node.id };
-        planetGroup.add(hitbox);
-        interactiveHitboxesRef.current.push(hitbox);
-
-        let ringsMesh: THREE.Mesh | undefined;
-        let stasisShieldMesh: THREE.Mesh | undefined;
-        const stasisNeedles: THREE.Mesh[] = [];
-        let beaconSpire: THREE.Mesh | undefined;
-        let sparkPoints: THREE.Points | undefined;
-        let sparkAngles: Float32Array | undefined;
-        let sparkHeights: Float32Array | undefined;
-        let sparkSpeeds: Float32Array | undefined;
-
-        // COMPLETED PLANET: Saturn-like Planetary Rings + Ascended Orbital Spire + Stardust
-        if (node.status === 'COMPLETED') {
-          const ringGeo = new THREE.RingGeometry(2.2, 3.4, 64);
-          ringGeo.rotateX(-Math.PI / 2 + 0.38);
-          const ringMat = new THREE.MeshBasicMaterial({
-            map: getAccretionRingTexture('#fbbf24'),
-            transparent: true,
-            opacity: 0.85,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          });
-          ringsMesh = new THREE.Mesh(ringGeo, ringMat);
-          planetGroup.add(ringsMesh);
-
-          // Ascended Sky Laser Spire
-          const spireGeo = new THREE.CylinderGeometry(0.08, 0.08, 36, 12, 1, true);
-          const spireMat = new THREE.MeshBasicMaterial({
-            color: 0xfbbf24,
-            transparent: true,
-            opacity: 0.85,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          });
-          beaconSpire = new THREE.Mesh(spireGeo, spireMat);
-          beaconSpire.position.y = 18;
-          planetGroup.add(beaconSpire);
-
-          // 32 Golden Stardust Particles
-          const sparkCount = 32;
-          const posArr = new Float32Array(sparkCount * 3);
-          sparkAngles = new Float32Array(sparkCount);
-          sparkHeights = new Float32Array(sparkCount);
-          sparkSpeeds = new Float32Array(sparkCount);
-
-          for (let s = 0; s < sparkCount; s++) {
-            sparkAngles[s] = Math.random() * Math.PI * 2;
-            sparkHeights[s] = Math.random() * 6.0;
-            sparkSpeeds[s] = 1.0 + Math.random() * 2.2;
-            posArr[s * 3] = Math.cos(sparkAngles[s]) * 2.5;
-            posArr[s * 3 + 1] = sparkHeights[s] - 1.0;
-            posArr[s * 3 + 2] = Math.sin(sparkAngles[s]) * 2.5;
-          }
-
-          const sparkGeo = new THREE.BufferGeometry();
-          sparkGeo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
-          const sparkMat = new THREE.PointsMaterial({
-            color: 0xfde047,
-            size: 1.8,
-            transparent: true,
-            opacity: 0.9,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          });
-          sparkPoints = new THREE.Points(sparkGeo, sparkMat);
-          planetGroup.add(sparkPoints);
-        }
-
-        // UNLOCKED PLANET: Active Equator Telemetry Ring + Pulse Halo
-        if (node.status === 'UNLOCKED') {
-          const haloGeo = new THREE.RingGeometry(1.75, 1.95, 48);
-          haloGeo.rotateX(-Math.PI / 2);
-          const haloMat = new THREE.MeshBasicMaterial({
-            color: 0x38bdf8,
-            transparent: true,
-            opacity: 0.85,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          });
-          ringsMesh = new THREE.Mesh(haloGeo, haloMat);
-          planetGroup.add(ringsMesh);
-        }
-
-        // LOCKED PLANET: Pulsating Geodesic Hex-Stasis Shield & Crimson Needles
-        if (node.status === 'LOCKED') {
-          const shieldGeo = new THREE.IcosahedronGeometry(2.1, 2);
-          const shieldMat = new THREE.MeshBasicMaterial({
-            color: 0xf43f5e,
-            wireframe: true,
-            transparent: true,
-            opacity: 0.45,
-            depthWrite: false,
-          });
-          stasisShieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
-          planetGroup.add(stasisShieldMesh);
-
-          // 4 Crimson Laser Needles
-          for (let l = 0; l < 4; l++) {
-            const angle = (l * Math.PI) / 2;
-            const needleGeo = new THREE.CylinderGeometry(0.04, 0.04, 4.2, 8);
-            const needleMat = new THREE.MeshBasicMaterial({
-              color: 0xff1e42,
-              transparent: true,
-              opacity: 0.8,
-            });
-            const needle = new THREE.Mesh(needleGeo, needleMat);
-            needle.position.set(Math.cos(angle) * 2.2, 0, Math.sin(angle) * 2.2);
-            planetGroup.add(needle);
-            stasisNeedles.push(needle);
-          }
-        }
-
-        // Subtask Moonlet Satellites
-        const satelliteMoons: AnimatedSatelliteMoon[] = [];
-        const subTasks = node.subTasks || [];
-        subTasks.forEach((st, stIdx) => {
-          const moonRadius = 2.4 + stIdx * 0.55;
-          const moonGeo = new THREE.SphereGeometry(0.24, 16, 16);
-          const moonMat = new THREE.MeshStandardMaterial({
-            color: st.completed ? 0x10b981 : 0x38bdf8,
-            emissive: st.completed ? 0x34d399 : 0x0284c7,
-            emissiveIntensity: st.completed ? 1.8 : 0.9,
-            roughness: 0.2,
-            metalness: 0.8,
-          });
-          const moonMesh = new THREE.Mesh(moonGeo, moonMat);
-          planetGroup.add(moonMesh);
-
-          satelliteMoons.push({
-            mesh: moonMesh,
-            angle: (stIdx * Math.PI) / 2 + nodeIdx,
-            speed: 1.2 + stIdx * 0.4,
-            radius: moonRadius,
-            inclination: (stIdx * 0.35),
-          });
-        });
-
-        animatedPlanetsRef.current.push({
-          nodeId: node.id,
-          status: node.status,
-          region: node.region,
-          group: planetGroup,
-          planetMesh,
-          ringsMesh,
-          stasisShieldMesh,
-          stasisNeedles,
-          beaconSpire,
-          satelliteMoons,
-          sparkPoints,
-          sparkAngles,
-          sparkHeights,
-          sparkSpeeds,
-          rotationSpeed: 0.35 + (nodeIdx % 3) * 0.15,
-          basePos: new THREE.Vector3(node.position.x, node.position.y, node.position.z),
-          baseMaterials: [planetMat],
-        });
+      animatedCrystalsRef.current.push({
+        nodeId: node.id,
+        status: node.status,
+        region: node.region,
+        group: crystalGroup,
+        coreCrystal,
+        outerWireframe,
+        gimbalRingX,
+        gimbalRingZ,
+        accretionRing,
+        stasisShieldMesh,
+        stasisNeedles,
+        beaconSpire,
+        radarPod,
+        satelliteChips,
+        sparkPoints,
+        sparkAngles,
+        sparkHeights,
+        sparkSpeeds,
+        barChartGroup,
+        gearsGroup,
+        formulaSprite,
+        leaderLabel: {
+          sprite: leaderSprite,
+          line: leaderLine,
+        },
+        rotationSpeed: 0.45 + (nodeIdx % 3) * 0.15,
+        basePos: new THREE.Vector3(node.position.x, node.position.y, node.position.z),
+        baseMaterials: [coreMat],
       });
     });
   }, [
     nodes,
     disposeObjectHierarchy,
-    getTerraformedPlanetTexture,
-    getActivePlanetTexture,
-    getCryoStasisPlanetTexture,
-    getAccretionRingTexture,
+    getRadarAnchorTexture,
+    getLeaderLabelTexture,
+    getFormulaTexture,
+    getSubtaskLabelTexture,
   ]);
 
   // -------------------------------------------------------------
-  // 3. Build Interstellar Warp Conduits & Traveling Photonic Comets
+  // 3. Build Interstellar Warp Conduits & Traveling Photons
   // -------------------------------------------------------------
   useEffect(() => {
     const warpRoadsGroup = warpRoadsGroupRef.current;
@@ -1466,7 +1787,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     while (warpRoadsGroup.children.length > 0) {
       warpRoadsGroup.remove(warpRoadsGroup.children[0]);
     }
-    animatedCometsRef.current = [];
+    animatedConduitsRef.current = [];
 
     edges.forEach((edge, edgeIdx) => {
       const fromNode = nodesMap.get(edge.fromNodeId);
@@ -1479,18 +1800,18 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
 
       // Elevated Space Warp Curve
       const pMid = new THREE.Vector3().addVectors(pFrom, pTo).multiplyScalar(0.5);
-      pMid.y = Math.max(pFrom.y, pTo.y) + 3.2 + dist * 0.08;
+      pMid.y = Math.max(pFrom.y, pTo.y) + 2.5 + dist * 0.08;
       const warpCurve = new THREE.CatmullRomCurve3([pFrom, pMid, pTo]);
 
       const isCompleted = fromNode.status === 'COMPLETED';
       const isUnlocked = fromNode.status === 'UNLOCKED';
 
-      // Outer Translucent Glass Warp Tube
-      const tubeGeo = new THREE.TubeGeometry(warpCurve, 64, 0.14, 8, false);
+      // Outer Translucent Glass Tube
+      const tubeGeo = new THREE.TubeGeometry(warpCurve, 64, 0.12, 8, false);
       const tubeMat = new THREE.MeshBasicMaterial({
-        color: isCompleted ? 0xfbbf24 : isUnlocked ? 0x06b6d4 : 0x475569,
+        color: isCompleted ? 0xfbbf24 : isUnlocked ? 0x06b6d4 : 0x334155,
         transparent: true,
-        opacity: isCompleted ? 0.45 : isUnlocked ? 0.3 : 0.15,
+        opacity: isCompleted ? 0.45 : isUnlocked ? 0.35 : 0.15,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
@@ -1498,22 +1819,22 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       warpRoadsGroup.add(tubeMesh);
 
       // Inner Laser Core
-      const laserGeo = new THREE.TubeGeometry(warpCurve, 64, 0.038, 6, false);
+      const laserGeo = new THREE.TubeGeometry(warpCurve, 64, 0.035, 6, false);
       const laserMat = new THREE.MeshBasicMaterial({
-        color: isCompleted ? 0xffffff : isUnlocked ? 0x38bdf8 : 0x334155,
+        color: isCompleted ? 0xffffff : isUnlocked ? 0x38bdf8 : 0x1e293b,
         transparent: true,
-        opacity: isCompleted ? 0.95 : isUnlocked ? 0.75 : 0.35,
+        opacity: isCompleted ? 0.95 : isUnlocked ? 0.75 : 0.3,
         depthWrite: false,
       });
       const laserMesh = new THREE.Mesh(laserGeo, laserMat);
       warpRoadsGroup.add(laserMesh);
 
-      // Photonic Traveling Comets
+      // Traveling Photonic Pulses with Comet Tails
       const parts: WarpCometPart[] = [];
       const trailCount = isCompleted ? 4 : 2;
 
       for (let t = 0; t < trailCount; t++) {
-        const cometGeo = new THREE.SphereGeometry(0.32 - t * 0.07, 12, 12);
+        const cometGeo = new THREE.SphereGeometry(0.3 - t * 0.06, 12, 12);
         const cometMat = new THREE.MeshBasicMaterial({
           color: isCompleted ? (t === 0 ? 0xffffff : 0xf59e0b) : 0x38bdf8,
           transparent: true,
@@ -1528,7 +1849,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         });
       }
 
-      animatedCometsRef.current.push({
+      animatedConduitsRef.current.push({
         curve: warpCurve,
         parts,
         speed: isCompleted ? 0.16 : 0.09,
@@ -1539,7 +1860,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   }, [edges, nodesMap, disposeObjectHierarchy]);
 
   // -------------------------------------------------------------
-  // 4. Active Planet Selection Reticle
+  // 4. Active Node Selection Reticle
   // -------------------------------------------------------------
   useEffect(() => {
     const selectionGroup = selectionGroupRef.current;
@@ -1556,7 +1877,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
 
     const { x, y, z } = selectedNode.position;
 
-    // Dual Targeting Rings
+    // Dual Targeting Hologram Rings
     const ring1Geo = new THREE.RingGeometry(2.8, 3.1, 48);
     ring1Geo.rotateX(-Math.PI / 2);
     const ring1Mat = new THREE.MeshBasicMaterial({
@@ -1597,7 +1918,10 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       mousePosRef.current.set(mouseX, mouseY);
 
       raycasterRef.current.setFromCamera(mousePosRef.current, camera);
-      const intersects = raycasterRef.current.intersectObjects(interactiveHitboxesRef.current, false);
+      const intersects = raycasterRef.current.intersectObjects(
+        interactiveHitboxesRef.current,
+        false
+      );
 
       if (intersects.length > 0) {
         const hitMesh = intersects[0].object as THREE.Mesh;
@@ -1656,7 +1980,10 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       mousePosRef.current.set(mouseX, mouseY);
 
       raycasterRef.current.setFromCamera(mousePosRef.current, camera);
-      const intersects = raycasterRef.current.intersectObjects(interactiveHitboxesRef.current, false);
+      const intersects = raycasterRef.current.intersectObjects(
+        interactiveHitboxesRef.current,
+        false
+      );
 
       if (intersects.length > 0) {
         const hitMesh = intersects[0].object as THREE.Mesh;
@@ -1699,20 +2026,20 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   };
 
   const toggleViewMode = () => {
-    if (viewMode === 'isometric') {
-      setViewMode('perspective');
-      targetCamPosRef.current.set(0, 56, 68);
-      targetControlsLookAtRef.current.set(0, 0, 0);
+    if (viewMode === 'perspective') {
+      setViewMode('isometric');
+      targetCamPosRef.current.set(42, 46, 42);
+      targetControlsLookAtRef.current.set(0, 2, 0);
       isTransitioningCameraRef.current = true;
-    } else if (viewMode === 'perspective') {
+    } else if (viewMode === 'isometric') {
       setViewMode('topdown');
-      targetCamPosRef.current.set(0, 95, 0.1);
+      targetCamPosRef.current.set(0, 85, 0.1);
       targetControlsLookAtRef.current.set(0, 0, 0);
       isTransitioningCameraRef.current = true;
     } else {
-      setViewMode('isometric');
-      targetCamPosRef.current.set(48, 56, 48);
-      targetControlsLookAtRef.current.set(0, 0, 0);
+      setViewMode('perspective');
+      targetCamPosRef.current.set(38, 36, 42);
+      targetControlsLookAtRef.current.set(0, 2, 0);
       isTransitioningCameraRef.current = true;
     }
   };
@@ -1729,7 +2056,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
 
   return (
     <div
-      className={`relative w-full h-full overflow-hidden select-none bg-[#02040a] ${className}`}
+      className={`relative w-full h-full overflow-hidden select-none bg-[#020409] ${className}`}
       onPointerMove={handlePointerMove}
       onPointerDown={handlePointerDown}
       onPointerLeave={handlePointerLeave}
@@ -1756,13 +2083,13 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
               {hoveredTooltip.node.status === 'COMPLETED' && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  Terraformed
+                  Completed
                 </span>
               )}
               {hoveredTooltip.node.status === 'UNLOCKED' && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 animate-pulse">
                   <Sparkles className="w-3 h-3 text-cyan-400" />
-                  Active Orbit
+                  Active Matrix
                 </span>
               )}
               {hoveredTooltip.node.status === 'LOCKED' && (
@@ -1783,8 +2110,8 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
               </span>
               <span className="text-[11px] text-slate-400">
                 {hoveredTooltip.node.prerequisites.length === 0
-                  ? 'Base Planet'
-                  : `${hoveredTooltip.node.prerequisites.length} prerequisite warp${
+                  ? 'Foundational Hub'
+                  : `${hoveredTooltip.node.prerequisites.length} prerequisite conduit${
                       hoveredTooltip.node.prerequisites.length > 1 ? 's' : ''
                     }`}
               </span>
@@ -1818,13 +2145,13 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
           title={`Vantage: ${viewMode.toUpperCase()} (Click to toggle)`}
           aria-label="Toggle Camera Mode"
           className={`p-2.5 rounded-xl glass-panel transition-colors shadow-lg shadow-black/60 border ${
-            viewMode === 'isometric'
+            viewMode === 'perspective'
               ? 'text-cyan-400 border-cyan-500/50 bg-cyan-950/60'
               : 'text-slate-300 hover:text-cyan-400 hover:border-cyan-500/40 bg-slate-900/85 border-slate-800'
           }`}
         >
-          {viewMode === 'isometric' && <Box className="w-4 h-4" />}
           {viewMode === 'perspective' && <Compass className="w-4 h-4" />}
+          {viewMode === 'isometric' && <Box className="w-4 h-4" />}
           {viewMode === 'topdown' && <Layers className="w-4 h-4" />}
         </button>
 

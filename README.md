@@ -21,10 +21,10 @@
 
 Traditional syllabus outlines, learning roadmaps, and curriculum trackers are flat, sterile, and demotivating. Text bullet points fail to convey dependency hierarchy, spatial relationship, or momentum.
 
-**MindAtlas 3D** transforms flat course syllabi into an explorable **Interstellar Planetary Galaxy System**. Subject domains become radiant star systems centered on luminous galactic suns, while individual lessons and modules orbit as textured 3D celestial planets with orbiting satellite moonlets for subtasks. Clearing prerequisites sends traveling photonic comets along interstellar warp conduits, de-cloaks cryo-stasis containment shields, terraforms barren worlds, and triggers procedural acoustic telemetry synthesized live in the browser.
+**MindAtlas 3D** transforms flat course syllabi into an explorable **Tactical Holographic Command Matrix & Cosmic Knowledge Graph**. Subject domains become glowing interconnected neural nodes anchored onto a dark obsidian tactical glass tabletop, with individual lessons floating as **glowing faceted polyhedral crystals** (vibrant magenta octahedrons, radiant golden icosahedrons, and gyroscopic gimbal rings). Major hubs project **floating 3D infographics directly into space** — including glowing 3D mini bar charts with trendline splines, interlocking rotating gear cogs for optimization nodes, authentic mathematical notation billboards ($\nabla L$, $\sigma(z)$, $W x + b$), and subtask diamond chips radiating along fiber-optic conduits.
 
-To solve the dual demands of **visual spectacle** and **pedagogical clarity**, MindAtlas 3D provides a seamless **Dual-Mode Architecture**:
-1. **`[ 🌌 3D Cosmic Galaxy ]`**: An immersive 60 FPS WebGL universe with orbital Keplerian tracks, planetary rings, warp conduits, and cinematic fly-to navigation.
+To solve the dual demands of **game-grade visual spectacle** and **pedagogical clarity**, MindAtlas 3D provides a seamless **Dual-Mode Architecture**:
+1. **`[ 🌌 3D Holographic Matrix ]`**: An immersive 60 FPS WebGL command table with specular floor reflections, rotating radar targeting pods, polyhedral crystals, floating 3D charts and gears, laser conduits with traveling photons, and cinematic camera fly-to navigation.
 2. **`[ 📋 Structured Syllabus Outline ]`**: A clean, accessible curriculum roadmap with numbered steps (`01`, `02`...), module progress bars, subtask checklists, and direct 3D warp triggers.
 
 ### The Three Stitched Limbs of the Chimera
@@ -36,7 +36,7 @@ MindAtlas 3D deliberately stitches together three radically different computatio
 | Body Part | Technical Paradigm | Library / Stack | Role in MindAtlas 3D |
 | :--- | :--- | :--- | :--- |
 | **The Skeleton** | Discrete Graph Theory & Formal Compilers | Pure TypeScript Engine | Directed Acyclic Graph (DAG) with 3-color DFS cycle detection, topological ordering, and cascading status unlock propagation. |
-| **The Flesh & Eyes** | 3D Spatial Planetary WebGL Engine | Three.js WebGL + UnrealBloomPass HDR | 60 FPS cosmic universe with galactic star systems, textured 3D planets, Keplerian orbital rings, orbiting satellite moonlets, and interstellar warp conduits. |
+| **The Flesh & Eyes** | Game-Grade Holographic WebGL Engine | Three.js WebGL + UnrealBloomPass HDR | 60 FPS tactical command matrix with obsidian specular floor, animated radar targeting pods, glowing polyhedral crystals, floating 3D infographics (bar charts, gears, math formulas), and laser warp conduits. |
 | **The Voice & Pulse** | Modular Acoustic DSP Synthesis | Browser Web Audio API (`AudioContext`) | 100% zero-asset procedural sound generation: sector-tuned harmonic roots, elevation-to-pitch scaling, major-9th unlock fanfares, and an ethereal 55Hz space drone. |
 | **The Brain** | Spec-Driven Agent Architecture | Kiro (`.kiro/steering/`, `.kiro/specs/`, `.kiro/hooks/`) | Formal EARS requirements, architectural designs, phased task contracts, and automated pre-save validation hooks. |
 
