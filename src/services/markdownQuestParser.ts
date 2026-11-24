@@ -8,15 +8,13 @@ export interface MarkdownParseResult {
   warnings: string[];
 }
 
-interface RawParsedItem {
+interface ParsedTaskBlock {
   id: string;
   title: string;
   region: string;
   notes: string;
   xpReward: number;
   explicitStatus?: NodeStatus;
-  indentDepth: number;
-  parentIndex: number | null;
   prerequisiteTitles: string[];
   tags: string[];
 }
@@ -32,330 +30,508 @@ function slugify(text: string): string {
 }
 
 /**
- * Parses markdown study plans, roadmaps, or Kiro specs into a valid DAG of MapNodes and MapEdges.
+ * Normalizes title for comparison (case-insensitive, trims punctuation).
+ */
+function normalizeTitle(text: string): string {
+  return text.trim().toLowerCase().replace(/['"`,]/g, '');
+}
+
+/**
+ * Canonical region name matcher. Falls back to closest known region or defaults to 'Frontend Archipelago'.
+ */
+function canonicalizeRegion(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return 'Frontend Archipelago';
+
+  const known = Object.keys(REGIONS);
+  const found = known.find((k) => k.toLowerCase() === trimmed.toLowerCase());
+  if (found) return found;
+
+  // Partial match
+  const partial = known.find((k) => k.toLowerCase().includes(trimmed.toLowerCase()) || trimmed.toLowerCase().includes(k.toLowerCase()));
+  if (partial) return partial;
+
+  return trimmed;
+}
+
+/**
+ * Intelligently parses markdown documents into a Directed Acyclic Graph (DAG) of MapNodes and MapEdges.
  *
- * Supported syntax:
- * - `# Region Name` or `## Region Name`: Sets active island region.
- * - `- [x] Task Title`: Marks completed task.
- * - `- [ ] Task Title`: Explicitly marks task to be solved.
- * - `- Task Title: Notes here`: Bullet item with inline notes.
- * - `(XP: 100)` or `[XP: 100]`: Custom XP reward value.
- * - `[tags: tag1, tag2]`: Custom tag metadata.
- * - `[depends: Parent Title]` or `[prereq: Parent Title]`: Explicit prerequisite link.
- * - Nested indentation: Automatically makes the parent bullet a prerequisite of the child.
+ * Supports TWO primary formats seamlessly:
+ *
+ * 1. SECTION FORMAT (used by Kiro specs, course syllabi, and roadmap presets):
+ *    # Document Title
+ *    ## Task Title
+ *    - Region: Frontend Archipelago
+ *    - Prerequisites: HTML, CSS & Semantic Foundations
+ *    - XP: 150
+ *    - Tags: typescript, js
+ *    Detailed description / notes text...
+ *
+ * 2. HIERARCHICAL OUTLINE FORMAT:
+ *    # Frontend Archipelago (Region heading)
+ *    - [ ] Task Title (XP: 100) [tags: react] [prereq: Parent Title]
+ *      - [ ] Child Task Title (nested under parent)
  */
 export function parseMarkdownToQuestGraph(markdown: string): MarkdownParseResult {
   const lines = markdown.split(/\r?\n/);
   const warnings: string[] = [];
-  const rawItems: RawParsedItem[] = [];
-  const discoveredRegions = new Set<string>();
 
-  let currentRegion = 'Frontend Archipelago';
-  discoveredRegions.add(currentRegion);
+  // Detect whether markdown uses Section Format (## Task Title with - Region: / - Prerequisites: bullets)
+  const isSectionFormat = lines.some((line) => {
+    const trimmed = line.trim();
+    return /^-\s*(?:Region|Prerequisites?|Depends?|XP|Tags):\s*/i.test(trimmed);
+  });
 
-  // Stack of parent item indices by indent level
-  const indentStack: { depth: number; index: number }[] = [];
+  if (isSectionFormat) {
+    return parseSectionFormat(lines, warnings);
+  } else {
+    return parseOutlineFormat(lines, warnings);
+  }
+}
 
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const rawLine = lines[lineIndex];
+/**
+ * Parses markdown using the Section Format (## Task Title + metadata bullets).
+ */
+function parseSectionFormat(lines: string[], warnings: string[]): MarkdownParseResult {
+  const tasks: ParsedTaskBlock[] = [];
+  let currentTask: ParsedTaskBlock | null = null;
+  const noteLines: string[] = [];
+
+  const finalizeCurrentTask = () => {
+    if (currentTask) {
+      if (noteLines.length > 0) {
+        const joinedNotes = noteLines.join('\n').trim();
+        currentTask.notes = currentTask.notes ? `${currentTask.notes}\n\n${joinedNotes}` : joinedNotes;
+      }
+      tasks.push(currentTask);
+      currentTask = null;
+      noteLines.length = 0;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
     const trimmed = rawLine.trim();
 
     if (!trimmed) {
+      if (currentTask && noteLines.length > 0) {
+        noteLines.push('');
+      }
       continue;
     }
+
+    // Check for Task Header (## or ###)
+    // Note: # is treated as document title unless there are no ##
+    const taskHeaderMatch = trimmed.match(/^#{2,4}\s+(.+)$/);
+    if (taskHeaderMatch) {
+      finalizeCurrentTask();
+
+      let headerTitle = taskHeaderMatch[1].trim();
+      let explicitStatus: NodeStatus | undefined = undefined;
+
+      const checkboxMatch = headerTitle.match(/^\[([ xX])\]\s*(.+)$/);
+      if (checkboxMatch) {
+        explicitStatus = checkboxMatch[1].toLowerCase() === 'x' ? 'COMPLETED' : 'UNLOCKED';
+        headerTitle = checkboxMatch[2].trim();
+      }
+
+      currentTask = {
+        id: slugify(headerTitle) || `task-${tasks.length + 1}`,
+        title: headerTitle,
+        region: 'Frontend Archipelago',
+        notes: '',
+        xpReward: 100,
+        explicitStatus,
+        prerequisiteTitles: [],
+        tags: [],
+      };
+      continue;
+    }
+
+    // If we haven't encountered any task header yet, check if this is a single # title
+    if (!currentTask) {
+      // Document title or preamble, ignore or note
+      continue;
+    }
+
+    // Check for metadata bullets under the active task
+    const metaBulletMatch = trimmed.match(/^[-*+]\s*([A-Za-z]+):\s*(.*)$/);
+    if (metaBulletMatch) {
+      const key = metaBulletMatch[1].toLowerCase();
+      const val = metaBulletMatch[2].trim();
+
+      if (key === 'region') {
+        currentTask.region = canonicalizeRegion(val);
+        continue;
+      }
+
+      if (key === 'prerequisite' || key === 'prerequisites' || key === 'prereq' || key === 'depends' || key === 'dependency') {
+        if (val && val.toLowerCase() !== 'none') {
+          currentTask.prerequisiteTitles.push(val);
+        }
+        continue;
+      }
+
+      if (key === 'xp' || key === 'xpreward' || key === 'points') {
+        const parsedXp = parseInt(val.replace(/\D/g, ''), 10);
+        if (!isNaN(parsedXp) && parsedXp > 0) {
+          currentTask.xpReward = parsedXp;
+        }
+        continue;
+      }
+
+      if (key === 'tag' || key === 'tags') {
+        val
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .forEach((t) => currentTask!.tags.push(t));
+        continue;
+      }
+
+      if (key === 'status') {
+        const upper = val.toUpperCase();
+        if (upper === 'COMPLETED' || upper === 'UNLOCKED' || upper === 'LOCKED') {
+          currentTask.explicitStatus = upper as NodeStatus;
+          continue;
+        }
+      }
+    }
+
+    // Otherwise, this is narrative description/notes text for the task
+    noteLines.push(rawLine);
+  }
+
+  finalizeCurrentTask();
+
+  return assembleGraphFromParsedTasks(tasks, warnings);
+}
+
+/**
+ * Parses markdown using hierarchical outline format (# Region, - Task bullets, nested sub-bullets).
+ */
+function parseOutlineFormat(lines: string[], warnings: string[]): MarkdownParseResult {
+  const tasks: ParsedTaskBlock[] = [];
+  let currentRegion = 'Frontend Archipelago';
+  const indentStack: { depth: number; taskIndex: number }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) continue;
 
     // Check for Region Heading (# or ##)
     const headingMatch = trimmed.match(/^#{1,3}\s+(.+)$/);
     if (headingMatch) {
-      const headingTitle = headingMatch[1].trim();
-      currentRegion = headingTitle;
-      discoveredRegions.add(currentRegion);
-      indentStack.length = 0; // Reset indent hierarchy for new region
+      currentRegion = canonicalizeRegion(headingMatch[1].trim());
+      indentStack.length = 0;
       continue;
     }
 
-    // Check for bullet list item: -, *, or numbered
+    // Check for Bullet item: -, *, or numbered
     const bulletMatch = rawLine.match(/^(\s*)(?:[-*+]|\d+\.)\s+(.+)$/);
     if (!bulletMatch) {
-      // Append text as notes to the most recent item if applicable
-      if (rawItems.length > 0) {
-        const lastItem = rawItems[rawItems.length - 1];
-        lastItem.notes = lastItem.notes ? `${lastItem.notes}\n${trimmed}` : trimmed;
+      // Append as notes to previous task
+      if (tasks.length > 0) {
+        const last = tasks[tasks.length - 1];
+        last.notes = last.notes ? `${last.notes}\n${trimmed}` : trimmed;
       }
       continue;
     }
 
     const leadingSpaces = bulletMatch[1].length;
-    let itemContent = bulletMatch[2].trim();
+    let content = bulletMatch[2].trim();
 
-    // Determine completion checkbox if present: [x] or [ ]
+    // Checkbox [x] or [ ]
     let explicitStatus: NodeStatus | undefined = undefined;
-    const checkboxMatch = itemContent.match(/^\[([ xX])\]\s*(.+)$/);
+    const checkboxMatch = content.match(/^\[([ xX])\]\s*(.+)$/);
     if (checkboxMatch) {
       explicitStatus = checkboxMatch[1].toLowerCase() === 'x' ? 'COMPLETED' : 'UNLOCKED';
-      itemContent = checkboxMatch[2].trim();
+      content = checkboxMatch[2].trim();
     }
 
-    // Extract XP reward if specified, e.g. (XP: 150) or [XP: 150]
+    // Extract XP (XP: 100) or [XP: 100]
     let xpReward = 100;
-    const xpMatch = itemContent.match(/[\(\[]XP:\s*(\d+)[\)\]]/i);
+    const xpMatch = content.match(/[\(\[]XP:\s*(\d+)[\)\]]/i);
     if (xpMatch) {
       xpReward = parseInt(xpMatch[1], 10);
-      itemContent = itemContent.replace(xpMatch[0], '').trim();
+      content = content.replace(xpMatch[0], '').trim();
     }
 
-    // Extract Tags if specified, e.g. [tags: React, 3D, WebGL]
+    // Extract [tags: ...]
     const tags: string[] = [];
-    const tagsMatch = itemContent.match(/\[tags:\s*([^\]]+)\]/i);
+    const tagsMatch = content.match(/\[tags?:\s*([^\]]+)\]/i);
     if (tagsMatch) {
       tagsMatch[1]
         .split(',')
         .map((t) => t.trim())
         .filter(Boolean)
         .forEach((t) => tags.push(t));
-      itemContent = itemContent.replace(tagsMatch[0], '').trim();
+      content = content.replace(tagsMatch[0], '').trim();
     }
 
-    // Extract explicit dependencies, e.g. [depends: Node A, Node B] or [prereq: Node A]
+    // Extract [prereq: ...] or [depends: ...]
     const prerequisiteTitles: string[] = [];
-    const prereqMatch = itemContent.match(/\[(?:depends|prereq|requires):\s*([^\]]+)\]/i);
+    const prereqMatch = content.match(/\[(?:prereqs?|depends?):\s*([^\]]+)\]/i);
     if (prereqMatch) {
       prereqMatch[1]
         .split(',')
         .map((p) => p.trim())
         .filter(Boolean)
         .forEach((p) => prerequisiteTitles.push(p));
-      itemContent = itemContent.replace(prereqMatch[0], '').trim();
+      content = content.replace(prereqMatch[0], '').trim();
     }
 
-    // Split title and inline notes (separated by colon or dash)
-    let title = itemContent;
+    // Clean inline notes if formatted like "Task Title: Note explanation"
+    let title = content;
     let notes = '';
-    const colonIdx = itemContent.indexOf(':');
-    if (colonIdx !== -1) {
-      title = itemContent.substring(0, colonIdx).trim();
-      notes = itemContent.substring(colonIdx + 1).trim();
+    const colonIndex = content.indexOf(':');
+    if (colonIndex > 3 && colonIndex < content.length - 1 && !content.slice(0, colonIndex).includes('[')) {
+      title = content.slice(0, colonIndex).trim();
+      notes = content.slice(colonIndex + 1).trim();
     }
 
-    // Determine parent from indent stack
+    // Handle indentation hierarchy (sub-bullets depend on parent bullet)
     while (indentStack.length > 0 && indentStack[indentStack.length - 1].depth >= leadingSpaces) {
       indentStack.pop();
     }
-    const parentIndex = indentStack.length > 0 ? indentStack[indentStack.length - 1].index : null;
 
-    const baseSlug = slugify(title) || `node-${rawItems.length + 1}`;
-    let finalId = baseSlug;
-    let counter = 1;
-    while (rawItems.some((item) => item.id === finalId)) {
-      finalId = `${baseSlug}-${counter++}`;
+    if (indentStack.length > 0) {
+      const parentTask = tasks[indentStack[indentStack.length - 1].taskIndex];
+      if (parentTask && !prerequisiteTitles.includes(parentTask.title)) {
+        prerequisiteTitles.push(parentTask.title);
+      }
     }
 
-    const currentIndex = rawItems.length;
-    rawItems.push({
-      id: finalId,
+    const newTaskIndex = tasks.length;
+    tasks.push({
+      id: slugify(title) || `task-${tasks.length + 1}`,
       title,
       region: currentRegion,
-      notes: notes || `Objective and mastery notes for ${title}.`,
+      notes,
       xpReward,
       explicitStatus,
-      indentDepth: leadingSpaces,
-      parentIndex,
       prerequisiteTitles,
       tags,
     });
 
-    indentStack.push({ depth: leadingSpaces, index: currentIndex });
+    indentStack.push({ depth: leadingSpaces, taskIndex: newTaskIndex });
   }
 
-  if (rawItems.length === 0) {
-    warnings.push('No bullet list items or headings found in markdown input.');
+  return assembleGraphFromParsedTasks(tasks, warnings);
+}
+
+/**
+ * Assembles valid MapNode[] and MapEdge[] from parsed task blocks, resolving prerequisite links and 3D island positions.
+ */
+function assembleGraphFromParsedTasks(tasks: ParsedTaskBlock[], warnings: string[]): MarkdownParseResult {
+  if (tasks.length === 0) {
+    warnings.push('No valid tasks or landmarks were found in the provided markdown.');
+    return { nodes: [], edges: [], regions: [], warnings };
+  }
+
+  // Ensure unique IDs
+  const seenIds = new Set<string>();
+  tasks.forEach((t, i) => {
+    let candidate = t.id || `node-${i + 1}`;
+    let counter = 1;
+    while (seenIds.has(candidate)) {
+      candidate = `${t.id}-${counter++}`;
+    }
+    t.id = candidate;
+    seenIds.add(t.id);
+  });
+
+  // Build title lookup maps for prerequisite linking
+  const titleToIdMap = new Map<string, string>();
+  const normalizedTitleToIdMap = new Map<string, string>();
+  tasks.forEach((t) => {
+    titleToIdMap.set(t.title, t.id);
+    normalizedTitleToIdMap.set(normalizeTitle(t.title), t.id);
+  });
+
+  // Collect regions
+  const regionsSet = new Set<string>();
+  tasks.forEach((t) => regionsSet.add(t.region));
+  const regionsList = Array.from(regionsSet);
+
+  // Group tasks by region to position them aesthetically across islands
+  const tasksByRegion = new Map<string, ParsedTaskBlock[]>();
+  tasks.forEach((t) => {
+    const list = tasksByRegion.get(t.region) || [];
+    list.push(t);
+    tasksByRegion.set(t.region, list);
+  });
+
+  // Compute 3D Coordinates
+  const positionsMap = new Map<string, Position3D>();
+
+  tasksByRegion.forEach((regionTasks, regionName) => {
+    const regionInfo = REGIONS[regionName];
+    const center: Position3D = regionInfo ? regionInfo.center : { x: 0, y: 0, z: 0 };
+    const radius = regionInfo ? regionInfo.islandRadius * 0.65 : 12;
+
+    const count = regionTasks.length;
+    regionTasks.forEach((task, index) => {
+      let x = center.x;
+      let y = center.y + 0.5;
+      let z = center.z;
+
+      if (count === 1) {
+        // Center of island
+        x = center.x;
+        z = center.z;
+      } else {
+        // Golden ratio spiral distribution around island center
+        const phi = index * 2.39996; // Golden angle in radians
+        const r = Math.min(radius, Math.sqrt((index + 1) / count) * radius);
+        x = center.x + Math.cos(phi) * r;
+        z = center.z + Math.sin(phi) * r;
+        y = center.y + 0.5 + ((index % 3) * 0.4);
+      }
+
+      positionsMap.set(task.id, {
+        x: Math.round(x * 10) / 10,
+        y: Math.round(y * 10) / 10,
+        z: Math.round(z * 10) / 10,
+      });
+    });
+  });
+
+  // Create Edges and Resolve Prerequisites
+  const edges: MapEdge[] = [];
+  const edgeSet = new Set<string>();
+  const nodesPrerequisitesMap = new Map<string, string[]>();
+
+  tasks.forEach((t) => {
+    const resolvedPrereqIds: string[] = [];
+
+    // Unpack multiple prerequisites while safely preserving titles that contain commas
+    const unpackedTitles: string[] = [];
+    const allTitlesSorted = tasks.map((tk) => tk.title).sort((a, b) => b.length - a.length);
+
+    t.prerequisiteTitles.forEach((rawPrereq) => {
+      const trimmed = rawPrereq.trim();
+      if (!trimmed) return;
+
+      // 1. Direct match with a task title (e.g. "HTML, CSS & Semantic Foundations")
+      if (titleToIdMap.has(trimmed) || normalizedTitleToIdMap.has(normalizeTitle(trimmed))) {
+        unpackedTitles.push(trimmed);
+        return;
+      }
+
+      // 2. Greedy match against known titles to unpack multiple prerequisites
+      let remaining = trimmed;
+      let matchedAny = false;
+      for (const knownTitle of allTitlesSorted) {
+        if (knownTitle === t.title) continue;
+        const normKnown = normalizeTitle(knownTitle);
+        const normRemaining = normalizeTitle(remaining);
+        if (normRemaining.includes(normKnown)) {
+          unpackedTitles.push(knownTitle);
+          matchedAny = true;
+          const idx = normRemaining.indexOf(normKnown);
+          remaining = remaining.slice(0, idx) + remaining.slice(idx + knownTitle.length);
+        }
+      }
+
+      // 3. Fallback: split by comma if no greedy match
+      if (!matchedAny) {
+        trimmed
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .forEach((p) => unpackedTitles.push(p));
+      }
+    });
+
+    unpackedTitles.forEach((prereqText) => {
+      const directId = titleToIdMap.get(prereqText);
+      const normalizedId = normalizedTitleToIdMap.get(normalizeTitle(prereqText));
+      const slugId = seenIds.has(slugify(prereqText)) ? slugify(prereqText) : undefined;
+
+      const parentId = directId || normalizedId || slugId;
+
+      if (parentId && parentId !== t.id) {
+        resolvedPrereqIds.push(parentId);
+
+        const edgeKey = `${parentId}->${t.id}`;
+        if (!edgeSet.has(edgeKey)) {
+          edgeSet.add(edgeKey);
+          edges.push({
+            id: `edge-${parentId}-${t.id}`,
+            fromNodeId: parentId,
+            toNodeId: t.id,
+          });
+        }
+      } else if (!parentId) {
+        warnings.push(`Task "${t.title}": referenced prerequisite "${prereqText}" could not be resolved.`);
+      }
+    });
+
+    nodesPrerequisitesMap.set(t.id, resolvedPrereqIds);
+  });
+
+  // Determine Node Status
+  // If no prerequisites -> UNLOCKED (or explicitStatus)
+  // If prerequisites exist -> LOCKED (unless explicitly COMPLETED)
+  const nodes: MapNode[] = tasks.map((t) => {
+    const prereqIds = nodesPrerequisitesMap.get(t.id) || [];
+    let status: NodeStatus = 'UNLOCKED';
+
+    if (t.explicitStatus) {
+      status = t.explicitStatus;
+    } else if (prereqIds.length > 0) {
+      status = 'LOCKED';
+    } else {
+      status = 'UNLOCKED';
+    }
+
     return {
-      nodes: [],
-      edges: [],
-      regions: [],
+      id: t.id,
+      title: t.title,
+      region: t.region,
+      notes: t.notes || `Landmark: ${t.title}. Explore and complete prerequisite tasks to expand your knowledge atlas.`,
+      xpReward: t.xpReward,
+      status,
+      position: positionsMap.get(t.id) || { x: 0, y: 0.5, z: 0 },
+      prerequisites: prereqIds,
+      tags: t.tags.length > 0 ? t.tags : [t.region.toLowerCase().replace(/\s+/g, '-')],
+    };
+  });
+
+  // Check for Cycles in the Generated Graph
+  if (detectCycle(nodes, edges)) {
+    warnings.push('A circular dependency was detected in the imported markdown. Removing circular road edges to maintain a valid DAG.');
+
+    // Break circular edges safely
+    const cleanEdges: MapEdge[] = [];
+    const testEdges: MapEdge[] = [];
+
+    for (const edge of edges) {
+      testEdges.push(edge);
+      if (detectCycle(nodes, testEdges)) {
+        testEdges.pop(); // Remove cycle-causing edge
+        warnings.push(`Broke cycle caused by dependency edge: ${edge.fromNodeId} -> ${edge.toNodeId}`);
+      } else {
+        cleanEdges.push(edge);
+      }
+    }
+
+    return {
+      nodes,
+      edges: cleanEdges,
+      regions: regionsList,
       warnings,
     };
   }
 
-  // Map of title to ID for resolving explicit prerequisites
-  const titleToId = new Map<string, string>();
-  for (const item of rawItems) {
-    titleToId.set(item.title.toLowerCase(), item.id);
-  }
-
-  // Build nodes and resolve prerequisites
-  const preliminaryNodes: MapNode[] = [];
-  const edges: MapEdge[] = [];
-
-  for (let i = 0; i < rawItems.length; i++) {
-    const item = rawItems[i];
-    const prerequisites: string[] = [];
-
-    // 1. Add hierarchical parent prerequisite from indentation
-    if (item.parentIndex !== null && item.parentIndex >= 0 && item.parentIndex < rawItems.length) {
-      const parentId = rawItems[item.parentIndex].id;
-      if (!prerequisites.includes(parentId)) {
-        prerequisites.push(parentId);
-      }
-    }
-
-    // 2. Add explicit prerequisites
-    for (const prereqTitle of item.prerequisiteTitles) {
-      const resolvedId = titleToId.get(prereqTitle.toLowerCase());
-      if (resolvedId && resolvedId !== item.id && !prerequisites.includes(resolvedId)) {
-        prerequisites.push(resolvedId);
-      } else if (!resolvedId) {
-        warnings.push(`Could not find prerequisite "${prereqTitle}" for task "${item.title}".`);
-      }
-    }
-
-    preliminaryNodes.push({
-      id: item.id,
-      title: item.title,
-      region: item.region,
-      notes: item.notes,
-      xpReward: item.xpReward,
-      status: item.explicitStatus || 'LOCKED',
-      position: { x: 0, y: 0, z: 0 }, // Will calculate below
-      prerequisites,
-      tags: item.tags,
-    });
-  }
-
-  // Build candidate edges
-  for (const node of preliminaryNodes) {
-    for (const prereqId of node.prerequisites) {
-      edges.push({
-        id: `edge-${prereqId}->${node.id}`,
-        fromNodeId: prereqId,
-        toNodeId: node.id,
-      });
-    }
-  }
-
-  // Validate for cycles
-  if (detectCycle(preliminaryNodes, edges)) {
-    warnings.push('Cycle detected in prerequisites. Pruning circular back-edges.');
-    // Prune back-edges safely to ensure valid DAG
-    const safeEdges: MapEdge[] = [];
-    for (const edge of edges) {
-      if (!detectCycle(preliminaryNodes, [...safeEdges, edge])) {
-        safeEdges.push(edge);
-      } else {
-        warnings.push(`Pruned circular edge: ${edge.fromNodeId} -> ${edge.toNodeId}`);
-      }
-    }
-    edges.length = 0;
-    edges.push(...safeEdges);
-
-    // Synchronize prerequisites on nodes
-    for (const node of preliminaryNodes) {
-      node.prerequisites = edges
-        .filter((e) => e.toNodeId === node.id)
-        .map((e) => e.fromNodeId);
-    }
-  }
-
-  // Compute unlock status: if node has explicitStatus === 'COMPLETED', keep it;
-  // otherwise, if all prerequisites are completed or it has none, it is UNLOCKED, else LOCKED.
-  const nodeMap = new Map<string, MapNode>(preliminaryNodes.map((n) => [n.id, n]));
-  for (const node of preliminaryNodes) {
-    if (node.status !== 'COMPLETED') {
-      const allPrereqsDone =
-        node.prerequisites.length === 0 ||
-        node.prerequisites.every((pid) => {
-          const p = nodeMap.get(pid);
-          return p !== undefined && p.status === 'COMPLETED';
-        });
-      node.status = allPrereqsDone ? 'UNLOCKED' : 'LOCKED';
-    }
-  }
-
-  // Calculate 3D spatial layout for nodes grouped by region
-  const nodesByRegion = new Map<string, MapNode[]>();
-  for (const node of preliminaryNodes) {
-    const list = nodesByRegion.get(node.region) || [];
-    list.push(node);
-    nodesByRegion.set(node.region, list);
-  }
-
-  const regionNames = Array.from(discoveredRegions);
-  const regionCenters = new Map<string, Position3D>();
-
-  // Assign region centers (match pre-defined regions if available, or compute evenly spaced island coords)
-  regionNames.forEach((regionName, idx) => {
-    if (REGIONS[regionName]) {
-      regionCenters.set(regionName, REGIONS[regionName].center);
-    } else {
-      const totalCustom = regionNames.length;
-      const angle = (idx / totalCustom) * Math.PI * 2;
-      const radius = 32;
-      regionCenters.set(regionName, {
-        x: Number((Math.cos(angle) * radius).toFixed(1)),
-        y: 0,
-        z: Number((Math.sin(angle) * radius).toFixed(1)),
-      });
-    }
-  });
-
-  // Position nodes within each region
-  for (const [regionName, rNodes] of nodesByRegion.entries()) {
-    const center = regionCenters.get(regionName) || { x: 0, y: 0, z: 0 };
-
-    rNodes.forEach((node, nodeIndex) => {
-      // Golden angle spiral placement around island center
-      const angle = nodeIndex * 2.39996; // ~137.5 degrees in radians
-      const dist = 3 + Math.sqrt(nodeIndex + 1) * 3.2;
-      const elevation = 1.5 + (nodeIndex % 4) * 0.9;
-
-      node.position = {
-        x: Number((center.x + Math.cos(angle) * dist).toFixed(1)),
-        y: Number(elevation.toFixed(1)),
-        z: Number((center.z + Math.sin(angle) * dist).toFixed(1)),
-      };
-
-      // Set regional color if not present
-      const theme = REGIONS[regionName];
-      if (theme) {
-        node.color = theme.color;
-      }
-    });
-  }
-
   return {
-    nodes: preliminaryNodes,
+    nodes,
     edges,
-    regions: regionNames,
+    regions: regionsList,
     warnings,
   };
 }
-
-/**
- * Pre-configured Markdown templates for quick import and demo testing.
- */
-export const PRESET_MARKDOWN_TEMPLATES = {
-  fullstack: `# Frontend Archipelago
-- [x] HTML5 Semantics & Web APIs: Semantic landmarks, Canvas, and Service Workers (XP: 50) [tags: HTML, Web]
-  - [x] Modern CSS & Tailwind: Flexbox, CSS Grid, animations, and dark mode (XP: 75) [tags: CSS, Styling]
-    - [ ] React 19 Ecosystem: Concurrent mode, Server Components, and Actions (XP: 125) [tags: React, TypeScript]
-      - [ ] Three.js 3D Cartography: Interactive WebGL viewports and GLSL shaders (XP: 175) [tags: 3D, WebGL]
-
-# Backend Citadel
-- [x] Node.js Core Architecture: V8 engine, Event Loop, and Buffer streams (XP: 50) [tags: Node, Runtime]
-  - [x] PostgreSQL & Relational Modeling: Schema indexing, CTEs, and ACID transactions (XP: 100) [tags: Database, SQL]
-    - [ ] Distributed Caching with Redis: Eviction policies, pub/sub, and cluster mode (XP: 150) [tags: Redis, Cache]
-      - [ ] Microservices Mesh: gRPC streaming, Docker containers, and Kubernetes pods (XP: 200) [tags: Microservices, K8s]
-`,
-
-  aiEngineer: `# AI & Neural Sanctuary
-- [x] Linear Algebra for Deep Learning: Matrix decomposition, eigenvalues, and tensors (XP: 75) [tags: Math, AI]
-  - [x] PyTorch Computational Graphs: Autograd, loss functions, and backprop (XP: 100) [tags: PyTorch, ML]
-    - [ ] Transformer Architectures: Scaled dot-product self-attention mechanisms (XP: 150) [tags: Transformers, NLP]
-      - [ ] Autonomous Agent Swarms: Multi-agent coordination and DAG workflows (XP: 200) [tags: Agents, LLM]
-
-# Cybersecurity Bastion
-- [x] Cryptography Keystones: Public-key cryptography, Diffie-Hellman, and SHA-256 (XP: 75) [tags: Crypto, Security]
-  - [ ] Zero-Trust Architecture: Continuous authentication and least-privilege IAM (XP: 150) [tags: IAM, ZeroTrust]
-    - [ ] Penetration Testing & Threat Defense: OWASP Top 10 mitigation and fuzzing (XP: 175) [tags: Pentesting, Defense]
-`,
-};

@@ -60,30 +60,44 @@ class SpatialAudioEngine {
   }
 
   /**
-   * High-tech sine/triangle blip with pitch dynamically scaled by elevation.
-   * Frequency range: 400Hz - 900Hz.
+   * High-tech sine/triangle blip with pitch dynamically scaled by region & elevation.
+   * Requirement 4.1: Region-mapped harmonic frequency scaling.
    * 
    * @param elevation - Y-axis spatial altitude or normalized height value
+   * @param region - Region name to anchor fundamental acoustic tuning
    */
-  public playHoverBlip(elevation?: number): void {
+  public playHoverBlip(elevation?: number, region?: string): void {
     if (this.muted) return;
     const ctx = this.initAudioContext();
     if (!ctx || !this.masterGain) return;
 
     const now = ctx.currentTime;
 
-    // Pitch mapping formula: scale elevation to [400Hz, 900Hz]
-    let baseFreq = 520;
-    if (elevation !== undefined) {
-      if (elevation >= 0 && elevation <= 1) {
-        // Normalized 0..1 scale
-        baseFreq = 400 + elevation * 500;
-      } else {
-        // Spatial 3D world units (e.g. -10 to +30)
-        baseFreq = 400 + Math.max(0, Math.min(25, elevation + 5)) * 20;
+    // Region-specific fundamental root tuning (Requirement 4.1)
+    let regionRoot = 523.25; // C5 default
+    if (region) {
+      const lower = region.toLowerCase();
+      if (lower.includes('frontend')) {
+        regionRoot = 523.25; // C5 - bright, crisp cyan tone
+      } else if (lower.includes('backend')) {
+        regionRoot = 440.0; // A4 - grounded, architectural emerald tone
+      } else if (lower.includes('ai') || lower.includes('neural')) {
+        regionRoot = 659.25; // E5 - ethereal, synaptic violet tone
+      } else if (lower.includes('cyber') || lower.includes('security')) {
+        regionRoot = 392.0; // G4 - fortified, resonant crimson tone
       }
     }
-    const targetFreq = Math.max(400, Math.min(900, baseFreq));
+
+    // Pitch mapping formula: elevation offset around region root (+- 150Hz)
+    let elevOffset = 0;
+    if (elevation !== undefined) {
+      if (elevation >= 0 && elevation <= 1) {
+        elevOffset = (elevation - 0.5) * 200;
+      } else {
+        elevOffset = Math.max(-100, Math.min(200, (elevation - 1.5) * 25));
+      }
+    }
+    const targetFreq = Math.max(280, Math.min(1100, regionRoot + elevOffset));
 
     // Dual-stage synthesis: crisp sine with subtle triangle transient
     const osc = ctx.createOscillator();
@@ -506,8 +520,8 @@ export const spatialAudioEngine = new SpatialAudioEngine();
 export const initAudioContext = (): AudioContext | null =>
   spatialAudioEngine.initAudioContext();
 
-export const playHoverBlip = (elevation?: number): void =>
-  spatialAudioEngine.playHoverBlip(elevation);
+export const playHoverBlip = (elevation?: number, region?: string): void =>
+  spatialAudioEngine.playHoverBlip(elevation, region);
 
 export const playSelectTone = (): void =>
   spatialAudioEngine.playSelectTone();

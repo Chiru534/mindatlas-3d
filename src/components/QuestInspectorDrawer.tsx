@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Lock, 
@@ -11,9 +11,12 @@ import {
   Layers, 
   FileText, 
   Tag, 
-  Award
+  Award,
+  Edit3,
+  Save,
+  CheckSquare,
+  Square
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { MapNode, PrerequisiteDetail } from '../types/atlas';
 import { playLockedDenialTone } from '../services/spatialAudioEngine';
 
@@ -24,6 +27,13 @@ export interface QuestInspectorDrawerProps {
   onClose: () => void;
   onCompleteQuest: (nodeId: string) => void;
   onFocusNode?: (nodeId: string) => void;
+  onUpdateNotes?: (nodeId: string, updatedNotes: string) => void;
+}
+
+interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
 }
 
 export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
@@ -33,7 +43,40 @@ export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
   onClose,
   onCompleteQuest,
   onFocusNode,
+  onUpdateNotes,
 }) => {
+  const [isEditingNotes, setIsEditingNotes] = useState<boolean>(false);
+  const [editedNotes, setEditedNotes] = useState<string>('');
+  const [subTasks, setSubTasks] = useState<SubTask[]>([]);
+
+  // Synchronize state when selected node changes
+  useEffect(() => {
+    if (node) {
+      setEditedNotes(node.notes || '');
+      setIsEditingNotes(false);
+
+      // Generate or parse sub-tasks for this quest (Requirement 2.2)
+      // Check if notes contain markdown bullet items
+      const lines = (node.notes || '').split('\n').filter((l) => l.trim().startsWith('- '));
+      if (lines.length > 0) {
+        setSubTasks(
+          lines.map((line, idx) => ({
+            id: `sub-${idx}`,
+            title: line.replace(/^-\s*(\[[ xX]\])?\s*/, '').trim(),
+            completed: line.includes('[x]') || line.includes('[X]') || node.status === 'COMPLETED',
+          }))
+        );
+      } else {
+        // Default milestone sub-tasks based on node title
+        setSubTasks([
+          { id: 'sub-1', title: `Review foundational concepts for ${node.title}`, completed: node.status === 'COMPLETED' },
+          { id: 'sub-2', title: `Complete hands-on exercise / lab session`, completed: node.status === 'COMPLETED' },
+          { id: 'sub-3', title: `Verify implementation & clear dependencies`, completed: node.status === 'COMPLETED' },
+        ]);
+      }
+    }
+  }, [node]);
+
   if (!isOpen || !node) return null;
 
   const isCompleted = node.status === 'COMPLETED';
@@ -52,20 +95,19 @@ export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
       return;
     }
 
-    // Trigger fireworks / confetti blast
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { x: 0.85, y: 0.7 },
-        colors: ['#06b6d4', '#eab308', '#10b981', '#a855f7'],
-        disableForReducedMotion: true,
-      });
-    } catch {
-      // Ignore if in environments without canvas context
-    }
-
+    // Call complete quest (confetti is fired centrally by App.tsx to prevent duplicates)
     onCompleteQuest(node.id);
+  };
+
+  const handleToggleSubTask = (subTaskId: string) => {
+    setSubTasks((prev) =>
+      prev.map((st) => (st.id === subTaskId ? { ...st, completed: !st.completed } : st))
+    );
+  };
+
+  const handleSaveNotes = () => {
+    onUpdateNotes?.(node.id, editedNotes);
+    setIsEditingNotes(false);
   };
 
   const getRegionBadgeColor = (region: string) => {
@@ -84,205 +126,229 @@ export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
       {/* Drawer Header */}
       <div className="p-4 border-b border-slate-800/80 bg-slate-900/60 flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          {/* Status and Region Badges */}
-          <div className="flex items-center flex-wrap gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
             {/* Status Badge */}
-            {isCompleted && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm shadow-emerald-500/20">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                COMPLETED
-              </span>
-            )}
-            {isUnlocked && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm shadow-cyan-500/20 animate-pulse">
-                <Unlock className="w-3.5 h-3.5 text-cyan-400" />
-                AVAILABLE
-              </span>
-            )}
-            {isLocked && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm shadow-rose-500/20">
-                <Lock className="w-3.5 h-3.5 text-rose-400" />
-                LOCKED
-              </span>
-            )}
+            <span className={`px-2.5 py-0.5 text-[11px] font-bold font-mono uppercase tracking-wider rounded-full border flex items-center gap-1.5 ${
+              isCompleted 
+                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40' 
+                : isUnlocked 
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 animate-pulse' 
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}>
+              {isCompleted && <CheckCircle2 className="w-3 h-3 text-yellow-400" />}
+              {isUnlocked && <Unlock className="w-3 h-3 text-cyan-400" />}
+              {isLocked && <Lock className="w-3 h-3 text-slate-400" />}
+              {node.status}
+            </span>
 
-            {/* Region Pill */}
-            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium border bg-gradient-to-r ${getRegionBadgeColor(node.region)}`}>
-              <Compass className="w-3 h-3" />
+            {/* Region Badge */}
+            <span className={`px-2.5 py-0.5 text-[11px] font-mono rounded-full border bg-gradient-to-r ${getRegionBadgeColor(node.region)}`}>
               {node.region}
             </span>
           </div>
 
-          {/* Quest Title */}
-          <h2 className="text-lg font-bold text-slate-100 font-mono tracking-tight leading-tight line-clamp-2">
+          <h2 className="text-base sm:text-lg font-bold font-mono text-slate-100 truncate" title={node.title}>
             {node.title}
           </h2>
         </div>
 
-        {/* Close Button */}
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 transition-colors"
-          title="Close Inspector"
+          className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+          aria-label="Close Inspector"
         >
           <X className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Drawer Body (Scrollable) */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Drawer Body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 font-mono text-xs">
         
-        {/* XP Reward Card */}
-        <div className="flex items-center justify-between p-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-transparent border border-yellow-500/20">
+        {/* XP Reward & Coordinates Banner */}
+        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/40 border border-slate-800">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-yellow-400">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Quest Reward</div>
-              <div className="text-sm font-mono font-bold text-yellow-300">+{node.xpReward} XP</div>
-            </div>
+            <Award className="w-4 h-4 text-yellow-400" />
+            <span className="text-slate-400">Reward:</span>
+            <span className="text-yellow-400 font-bold">+{node.xpReward} XP</span>
           </div>
-          <span className="text-xs font-mono text-slate-400">
-            3D Landmark: <span className="text-cyan-400 font-semibold">{isCompleted ? 'Gold Monument' : isUnlocked ? 'Cyan Beacon' : 'Obsidian Monolith'}</span>
-          </span>
+          <div className="flex items-center gap-1 text-[11px] text-slate-400">
+            <Compass className="w-3 h-3 text-cyan-400" />
+            <span>({Math.round(node.position.x)}, {Math.round(node.position.z)})</span>
+          </div>
         </div>
 
-        {/* Prerequisites Checklist */}
+        {/* Prerequisites Section */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+          <div className="flex items-center justify-between text-slate-400">
             <span className="flex items-center gap-1 font-semibold text-slate-300">
               <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              PREREQUISITES ({prerequisites.filter((p) => p.isCompleted).length}/{prerequisites.length})
+              PREREQUISITES ({prerequisites.length})
             </span>
-            {prerequisites.length === 0 && (
-              <span className="text-[11px] text-emerald-400">Root Landmark</span>
+            {missingPrerequisites.length > 0 && (
+              <span className="text-rose-400 text-[10px] flex items-center gap-1">
+                <ShieldAlert className="w-3 h-3" />
+                {missingPrerequisites.length} Required
+              </span>
             )}
           </div>
 
-          {prerequisites.length > 0 ? (
+          {prerequisites.length === 0 ? (
+            <div className="p-2.5 rounded-lg bg-slate-900/30 border border-slate-800 text-slate-400 text-[11px]">
+              No prerequisite tasks required. This is an entry-level landmark on the island.
+            </div>
+          ) : (
             <div className="space-y-1.5">
               {prerequisites.map((prereq) => (
                 <div
                   key={prereq.id}
-                  onClick={() => onFocusNode && onFocusNode(prereq.id)}
-                  className={`flex items-center justify-between p-2 rounded-lg border text-xs font-mono cursor-pointer transition-all ${
+                  onClick={() => onFocusNode?.(prereq.id)}
+                  className={`flex items-center justify-between p-2 rounded-lg border text-[11px] transition-colors cursor-pointer ${
                     prereq.isCompleted
-                      ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-200 hover:border-emerald-500/50'
-                      : 'bg-rose-950/20 border-rose-500/30 text-rose-200 hover:border-rose-500/50'
+                      ? 'bg-yellow-950/20 border-yellow-500/30 text-yellow-200 hover:bg-yellow-900/30'
+                      : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300'
                   }`}
-                  title={prereq.isCompleted ? 'Prerequisite completed (Click to view)' : 'Prerequisite locked (Click to view)'}
+                  title="Click to locate on map"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 truncate">
                     {prereq.isCompleted ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
                     ) : (
-                      <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+                      <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     )}
                     <span className="truncate">{prereq.title}</span>
                   </div>
-                  <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5 ml-2 hover:text-cyan-300">
-                    Jump <ArrowRight className="w-3 h-3" />
-                  </span>
+
+                  <ArrowRight className="w-3 h-3 text-slate-400 shrink-0" />
                 </div>
               ))}
-            </div>
-          ) : (
-            <div className="p-2.5 rounded-lg bg-slate-900/40 border border-slate-800 text-xs text-slate-400">
-              No prerequisite landmarks required. This is a foundational territory quest.
             </div>
           )}
         </div>
 
-        {/* Rich Notes Section */}
+        {/* Interactive Milestone Sub-tasks (Requirement 2.2) */}
         <div className="space-y-2">
-          <div className="flex items-center gap-1 text-xs font-mono font-semibold text-slate-300">
-            <FileText className="w-3.5 h-3.5 text-cyan-400" />
-            FIELD RESEARCH & NOTES
-          </div>
+          <span className="flex items-center gap-1 font-semibold text-slate-300">
+            <CheckSquare className="w-3.5 h-3.5 text-cyan-400" />
+            MILESTONE SUB-TASKS ({subTasks.filter((s) => s.completed).length}/{subTasks.length})
+          </span>
 
-          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs text-slate-300 font-mono leading-relaxed space-y-2">
-            {node.notes ? (
-              node.notes.split('\n\n').map((paragraph, index) => {
-                // If paragraph is a bullet list
-                if (paragraph.startsWith('- ') || paragraph.startsWith('* ')) {
-                  return (
-                    <ul key={index} className="list-disc list-inside space-y-1 text-slate-300 pl-1">
-                      {paragraph.split('\n').map((item, itemIdx) => (
-                        <li key={itemIdx} className="text-slate-300">
-                          {item.replace(/^[-*]\s+/, '')}
-                        </li>
-                      ))}
-                    </ul>
-                  );
-                }
-                // If paragraph is code or block
-                if (paragraph.startsWith('```')) {
-                  const cleaned = paragraph.replace(/```[a-z]*/g, '').trim();
-                  return (
-                    <pre key={index} className="p-2 rounded bg-slate-900 border border-cyan-500/20 text-cyan-300 overflow-x-auto text-[11px]">
-                      <code>{cleaned}</code>
-                    </pre>
-                  );
-                }
-                return <p key={index}>{paragraph}</p>;
-              })
-            ) : (
-              <p className="text-slate-500 italic">No field research notes recorded for this landmark.</p>
-            )}
+          <div className="space-y-1.5">
+            {subTasks.map((st) => (
+              <button
+                key={st.id}
+                type="button"
+                onClick={() => handleToggleSubTask(st.id)}
+                className={`w-full text-left flex items-start gap-2 p-2 rounded-lg border text-[11px] transition-colors ${
+                  st.completed
+                    ? 'bg-cyan-950/25 border-cyan-500/30 text-cyan-200'
+                    : 'bg-slate-900/30 border-slate-800 text-slate-400 hover:bg-slate-900/60'
+                }`}
+              >
+                {st.completed ? (
+                  <CheckSquare className="w-3.5 h-3.5 text-cyan-400 mt-0.5 shrink-0" />
+                ) : (
+                  <Square className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
+                )}
+                <span className={st.completed ? 'line-through text-slate-400' : 'text-slate-200'}>
+                  {st.title}
+                </span>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Tags (if any) */}
-        {node.tags && node.tags.length > 0 && (
-          <div className="flex items-center flex-wrap gap-1.5 pt-1">
-            {node.tags.map((tag, idx) => (
-              <span
-                key={idx}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800/80 text-slate-400 border border-slate-700/60"
+        {/* Study Notes & Documentation (with in-place editing) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-slate-300">
+            <span className="flex items-center gap-1 font-semibold">
+              <FileText className="w-3.5 h-3.5 text-cyan-400" />
+              STUDY NOTES & SPEC
+            </span>
+            {!isEditingNotes ? (
+              <button
+                type="button"
+                onClick={() => setIsEditingNotes(true)}
+                className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
               >
-                <Tag className="w-2.5 h-2.5 text-slate-500" />
-                {tag}
-              </span>
-            ))}
+                <Edit3 className="w-3 h-3" /> Edit Notes
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSaveNotes}
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-bold"
+              >
+                <Save className="w-3 h-3" /> Save
+              </button>
+            )}
+          </div>
+
+          {isEditingNotes ? (
+            <textarea
+              value={editedNotes}
+              onChange={(e) => setEditedNotes(e.target.value)}
+              rows={5}
+              className="w-full p-2.5 rounded-xl bg-slate-950 border border-cyan-500/50 text-slate-200 text-xs font-mono focus:outline-none resize-y"
+              placeholder="Add your study notes or markdown explanation..."
+            />
+          ) : (
+            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">
+              {node.notes || 'No study notes recorded yet. Click Edit Notes to document key learning points.'}
+            </div>
+          )}
+        </div>
+
+        {/* Tags */}
+        {node.tags && node.tags.length > 0 && (
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider flex items-center gap-1">
+              <Tag className="w-3 h-3 text-slate-400" /> Tags
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {node.tags.map((tag, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-0.5 rounded-md text-[10px] bg-slate-800/80 text-slate-300 border border-slate-700/80"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
       </div>
 
-      {/* Drawer Footer Action */}
-      <div className="p-4 border-t border-slate-800/80 bg-slate-900/90">
+      {/* Drawer Action Footer */}
+      <div className="p-4 border-t border-slate-800/80 bg-slate-900/70">
         {isCompleted ? (
-          <div className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-mono font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
-            <Award className="w-4 h-4 text-emerald-400" />
-            TERRITORY CONQUERED (+{node.xpReward} XP AWARDED)
+          <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 font-mono text-xs font-semibold">
+            <CheckCircle2 className="w-4 h-4 text-yellow-400" />
+            <span>Landmark Mastered (+{node.xpReward} XP Earned)</span>
           </div>
-        ) : isUnlocked ? (
+        ) : (
           <button
+            type="button"
             onClick={handleCompleteClick}
             disabled={!canComplete}
-            className={`w-full py-3 px-4 rounded-xl text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all shadow-lg active:scale-98 ${
+            className={`w-full py-3 px-4 rounded-xl font-mono text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
               canComplete
-                ? 'bg-gradient-to-r from-cyan-500 via-sky-500 to-indigo-500 hover:from-cyan-400 hover:to-indigo-400 text-slate-950 shadow-cyan-500/30 cursor-pointer animate-cyber-pulse'
-                : 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 shadow-lg shadow-cyan-950/60 active:scale-98 animate-pulse'
+                : 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-80'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            COMPLETE QUEST & UNLOCK TERRITORY
+            {isLocked ? (
+              <>
+                <Lock className="w-4 h-4" />
+                <span>Prerequisites Required</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-yellow-300" />
+                <span>Complete Quest & Unlock Territory</span>
+              </>
+            )}
           </button>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            <button
-              onClick={handleCompleteClick}
-              className="w-full py-2.5 px-4 rounded-xl text-xs font-mono font-bold flex items-center justify-center gap-2 bg-rose-950/40 border border-rose-500/40 text-rose-300 hover:bg-rose-900/40 transition-colors cursor-pointer"
-            >
-              <ShieldAlert className="w-4 h-4 text-rose-400" />
-              LOCKED BY PREREQUISITES
-            </button>
-            <p className="text-[10px] font-mono text-center text-slate-400">
-              Complete {missingPrerequisites.length} prerequisite {missingPrerequisites.length === 1 ? 'task' : 'tasks'} to lift fog-of-war.
-            </p>
-          </div>
         )}
       </div>
     </aside>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, 
   FileCode2, 
@@ -9,15 +9,18 @@ import {
   Terminal,
   Cpu,
   Globe,
-  Shield
+  Shield,
+  ArrowRight,
+  RefreshCw,
+  PlusCircle
 } from 'lucide-react';
 import { MapNode, MapEdge } from '../types/atlas';
+import { parseMarkdownToQuestGraph } from '../services/markdownQuestParser';
 
 export interface QuestImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImportGraph: (importedNodes: MapNode[], importedEdges: MapEdge[]) => void;
-  parseMarkdownToGraph: (markdown: string) => { nodes: MapNode[]; edges: MapEdge[] };
+  onImportGraph: (importedNodes: MapNode[], importedEdges: MapEdge[], replaceWorld: boolean) => void;
 }
 
 interface TemplatePreset {
@@ -118,51 +121,45 @@ Parameter-Efficient Fine-Tuning (PEFT), 4-bit AWQ/GGUF quantization, and high-th
 ## Autonomous Multi-Agent Swarms
 - Region: AI & Neural Sanctuary
 - Prerequisites: LLM Fine-Tuning, LoRA & Quantization
-- XP: 350
-- Tags: agents, swarm, tool-calling
-DAG planning, tool execution protocols, memory recall, and coordinated multi-agent consensus.
+- XP: 300
+- Tags: agents, reasoning, orchestration
+Coordinated multi-agent swarms, shared message boards, tool calling, and autonomous goal execution.
 `
   },
   {
     id: 'cybersecurity',
     name: 'Cybersecurity Bastion & Hardening',
-    category: 'Security & Penetration Testing',
+    category: 'Security & Systems',
     icon: 'shield',
-    description: 'Zero Trust architecture, protocol reverse engineering, kernel defense, and exploit prevention.',
-    markdown: `# Cybersecurity Bastion Curricula
+    description: 'Zero Trust architecture, Cryptography, Network Hardening, and Threat Modeling.',
+    markdown: `# Cybersecurity & Hardening Roadmap
 
-## Network Protocols & Packet Inspection
+## Cryptographic Foundations & PKI
 - Region: Cybersecurity Bastion
 - XP: 120
-- Tags: networking, tcp, wireshark
-Deep TCP/IP stack analysis, TLS handshakes, DNS routing, and packet dissections.
+- Tags: crypto, tls, security
+Symmetric/asymmetric ciphers, hashing, digital signatures, certificates, and TLS 1.3 handshake.
 
-## Linux System Internals & Memory Architecture
+## Network Security & Packet Analysis
 - Region: Cybersecurity Bastion
-- XP: 140
-- Tags: linux, kernel, memory
-Virtual memory addressing, syscall tables, namespace isolation, and cgroups.
+- Prerequisites: Cryptographic Foundations & PKI
+- XP: 180
+- Tags: networking, firewalls, wireshark
+Subnet isolation, stateful firewalls, packet inspection, and DDoS mitigation strategies.
 
-## Web Application Vulnerabilities & OWASP
+## OWASP Top 10 & AppSec Hardening
 - Region: Cybersecurity Bastion
-- Prerequisites: Network Protocols & Packet Inspection
-- XP: 200
-- Tags: websec, owasp, xss, sqli
-Cross-site scripting mitigation, SQL injection defense, SSRF countermeasures, and CORS policies.
+- Prerequisites: Cryptographic Foundations & PKI
+- XP: 220
+- Tags: owasp, appsec, xss, sqli
+Mitigating injection attacks, cross-site scripting, broken access control, and secrets hygiene.
 
-## Cryptographic Primitives & Zero Knowledge
+## Zero Trust Architecture & IAM
 - Region: Cybersecurity Bastion
-- Prerequisites: Network Protocols & Packet Inspection
-- XP: 240
-- Tags: crypto, rsa, ecc, zk
-Elliptic curve cryptography, AES-GCM symmetric ciphers, and zero-knowledge verification circuits.
-
-## Red Team Evasion & Kernel Hardening
-- Region: Cybersecurity Bastion
-- Prerequisites: Linux System Internals & Memory Architecture, Web Application Vulnerabilities & OWASP
-- XP: 320
-- Tags: exploit-dev, hardening, audit
-Buffer overflow defenses, ASLR bypass protection, eBPF telemetry monitoring, and container security.
+- Prerequisites: Network Security & Packet Analysis, OWASP Top 10 & AppSec Hardening
+- XP: 260
+- Tags: zerotrust, iam, sso
+Identity-aware proxies, least-privilege RBAC, ephemeral tokens, and micro-segmentation.
 `
   }
 ];
@@ -171,54 +168,40 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
   isOpen,
   onClose,
   onImportGraph,
-  parseMarkdownToGraph,
 }) => {
-  const [markdownText, setMarkdownText] = useState<string>(PRESET_TEMPLATES[0].markdown);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(PRESET_TEMPLATES[0].id);
+  const [markdownText, setMarkdownText] = useState<string>(PRESET_TEMPLATES[0].markdown);
+  const [replaceMode, setReplaceMode] = useState<boolean>(true); // true = replace current world, false = merge
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [parsedPreview, setParsedPreview] = useState<{ nodeCount: number; edgeCount: number } | null>(null);
+
+  // Automatically validate on change
+  const parseResult = useMemo(() => {
+    if (!markdownText.trim()) return null;
+    try {
+      const res = parseMarkdownToQuestGraph(markdownText);
+      return res;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  }, [markdownText]);
 
   if (!isOpen) return null;
 
-  const handleSelectTemplate = (template: TemplatePreset) => {
-    setSelectedTemplateId(template.id);
-    setMarkdownText(template.markdown);
+  const handleSelectTemplate = (tmpl: TemplatePreset) => {
+    setSelectedTemplateId(tmpl.id);
+    setMarkdownText(tmpl.markdown);
     setValidationError(null);
-    setParsedPreview(null);
-  };
-
-  const handleValidate = () => {
-    try {
-      if (!markdownText.trim()) {
-        setValidationError('Please enter markdown specification or select a preset template.');
-        setParsedPreview(null);
-        return;
-      }
-
-      const { nodes, edges } = parseMarkdownToGraph(markdownText);
-      if (nodes.length === 0) {
-        setValidationError('No valid quest headings (# or ##) found in the text.');
-        setParsedPreview(null);
-        return;
-      }
-
-      setValidationError(null);
-      setParsedPreview({ nodeCount: nodes.length, edgeCount: edges.length });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to parse markdown.';
-      setValidationError(message);
-      setParsedPreview(null);
-    }
   };
 
   const handleImport = () => {
     try {
-      const { nodes, edges } = parseMarkdownToGraph(markdownText);
-      if (nodes.length === 0) {
-        setValidationError('No valid quest headings found in markdown.');
+      const res = parseMarkdownToQuestGraph(markdownText);
+      if (res.nodes.length === 0) {
+        setValidationError('No valid tasks or landmarks found in the markdown text.');
         return;
       }
-      onImportGraph(nodes, edges);
+      onImportGraph(res.nodes, res.edges, replaceMode);
       onClose();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error applying graph.';
@@ -227,14 +210,14 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
       <div 
-        className="w-full max-w-3xl glass-panel rounded-2xl border border-purple-500/40 shadow-2xl shadow-purple-950/50 flex flex-col max-h-[90vh] overflow-hidden"
+        className="w-full max-w-4xl glass-panel rounded-2xl border border-purple-500/40 shadow-2xl shadow-purple-950/50 flex flex-col max-h-[92vh] overflow-hidden"
         role="dialog"
         aria-modal="true"
       >
         {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/60 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-slate-900/70 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
               <FileCode2 className="w-5 h-5" />
@@ -243,11 +226,11 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
               <h2 className="text-base sm:text-lg font-bold font-mono text-slate-100 flex items-center gap-2">
                 <span>Import Quest Spec & Markdown</span>
                 <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300">
-                  DAG Parser
+                  DAG Parser v2
                 </span>
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                Transform outlines into 3D territory islands and unlockable landmark nodes.
+                Transform study outlines & Kiro specs into 3D territory islands and unlockable road highways.
               </p>
             </div>
           </div>
@@ -267,7 +250,7 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
           <div>
             <label className="block text-xs font-mono font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-              SELECT CURATED ROADMAP TEMPLATE OR PASTE CUSTOM SPEC
+              CHOOSE A CURATED ROADMAP PRESET OR PASTE YOUR OWN
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -278,7 +261,7 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
                   onClick={() => handleSelectTemplate(tmpl)}
                   className={`text-left p-3 rounded-xl border transition-all ${
                     selectedTemplateId === tmpl.id
-                      ? 'bg-purple-950/40 border-purple-500/60 text-purple-200 shadow-sm shadow-purple-500/20'
+                      ? 'bg-purple-950/50 border-purple-500/70 text-purple-200 shadow-md shadow-purple-500/20 ring-1 ring-purple-400/40'
                       : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:border-slate-700 hover:bg-slate-900/60'
                   }`}
                 >
@@ -296,20 +279,53 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
             </div>
           </div>
 
+          {/* Import Destination Mode: Replace vs Merge */}
+          <div className="p-3.5 rounded-xl bg-slate-900/50 border border-slate-800">
+            <span className="text-xs font-mono font-semibold text-slate-300 block mb-2">
+              IMPORT TARGET MODE:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setReplaceMode(true)}
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-left text-xs font-mono transition-all ${
+                  replaceMode
+                    ? 'bg-cyan-950/40 border-cyan-500/60 text-cyan-300 shadow-sm'
+                    : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800/40'
+                }`}
+              >
+                <RefreshCw className={`w-4 h-4 ${replaceMode ? 'text-cyan-400' : 'text-slate-500'}`} />
+                <div>
+                  <div className="font-bold">Replace World (Clean Slate)</div>
+                  <div className="text-[10px] text-slate-400">Recommended. Overwrites current map with this roadmap.</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReplaceMode(false)}
+                className={`flex items-center gap-2.5 p-2.5 rounded-lg border text-left text-xs font-mono transition-all ${
+                  !replaceMode
+                    ? 'bg-purple-950/40 border-purple-500/60 text-purple-300 shadow-sm'
+                    : 'bg-slate-900/40 border-slate-800 text-slate-400 hover:bg-slate-800/40'
+                }`}
+              >
+                <PlusCircle className={`w-4 h-4 ${!replaceMode ? 'text-purple-400' : 'text-slate-500'}`} />
+                <div>
+                  <div className="font-bold">Merge with Current Map</div>
+                  <div className="text-[10px] text-slate-400">Appends new landmarks and bridges prerequisite highways.</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
           {/* Markdown Text Area */}
           <div>
             <div className="flex items-center justify-between text-xs font-mono text-slate-400 mb-1.5">
               <span className="flex items-center gap-1 font-semibold text-slate-300">
                 <Terminal className="w-3.5 h-3.5 text-cyan-400" />
-                MARKDOWN SPECIFICATION (Headings, Prerequisites & XP)
+                MARKDOWN SPECIFICATION (Sections with - Region:, - Prerequisites:, - XP:)
               </span>
-              <button
-                type="button"
-                onClick={handleValidate}
-                className="text-[11px] text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
-              >
-                Inspect & Validate Graph
-              </button>
             </div>
 
             <textarea
@@ -317,15 +333,14 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
               onChange={(e) => {
                 setMarkdownText(e.target.value);
                 setValidationError(null);
-                setParsedPreview(null);
               }}
-              rows={10}
+              rows={9}
               className="w-full p-3 rounded-xl bg-slate-950/80 border border-slate-800 font-mono text-xs text-slate-200 focus:outline-none focus:border-cyan-500/60 transition-colors leading-relaxed resize-y"
-              placeholder="# Quest Island Title&#10;&#10;## Landmark Task Title&#10;- Region: Frontend Archipelago&#10;- Prerequisites: Previous Task&#10;- XP: 150&#10;Task notes..."
+              placeholder="# Quest Island Title&#10;&#10;## Landmark Task Title&#10;- Region: Frontend Archipelago&#10;- Prerequisites: Previous Task Title&#10;- XP: 150&#10;Task notes..."
             />
           </div>
 
-          {/* Validation Feedback */}
+          {/* Validation Feedback & Preview */}
           {validationError && (
             <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs font-mono text-rose-300">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
@@ -333,39 +348,84 @@ export const QuestImportModal: React.FC<QuestImportModalProps> = ({
             </div>
           )}
 
-          {parsedPreview && (
-            <div className="flex items-center justify-between p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-xs font-mono text-cyan-300">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                <span>Validated DAG Structure:</span>
+          {parseResult && parseResult.nodes.length > 0 && (
+            <div className="p-3.5 rounded-xl bg-cyan-950/30 border border-cyan-500/40 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                <div className="flex items-center gap-2 text-cyan-300 font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-cyan-400" />
+                  <span>Valid DAG Structure Detected:</span>
+                </div>
+                <div className="flex items-center gap-3 text-slate-300 text-[11px]">
+                  <span className="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-bold">
+                    {parseResult.nodes.length} Landmarks
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-purple-950 border border-purple-800 text-purple-300 font-bold">
+                    {parseResult.edges.length} Road Highways
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-indigo-950 border border-indigo-800 text-indigo-300 font-bold">
+                    {parseResult.regions.length} Island Regions
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-4">
-                <span><strong>{parsedPreview.nodeCount}</strong> Landmarks</span>
-                <span><strong>{parsedPreview.edgeCount}</strong> Road Highways</span>
+
+              {/* Quick parsed items list */}
+              <div className="max-h-32 overflow-y-auto space-y-1 pr-1 font-mono text-[11px]">
+                {parseResult.nodes.map((n) => (
+                  <div key={n.id} className="flex items-center justify-between py-1 px-2 rounded bg-slate-900/60 border border-slate-800/80">
+                    <span className="text-slate-200 font-medium truncate max-w-xs">{n.title}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">{n.region}</span>
+                      {n.prerequisites.length > 0 && (
+                        <span className="text-[10px] text-cyan-400 flex items-center gap-0.5">
+                          <ArrowRight className="w-2.5 h-2.5" /> {n.prerequisites.length} prereq
+                        </span>
+                      )}
+                      <span className="text-[10px] text-yellow-400">+{n.xpReward} XP</span>
+                    </div>
+                  </div>
+                ))}
               </div>
+
+              {parseResult.warnings.length > 0 && (
+                <div className="text-[11px] text-amber-400 font-mono mt-1">
+                  {parseResult.warnings.map((w, i) => (
+                    <div key={i} className="flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{w}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 sm:p-5 border-t border-slate-800/80 bg-slate-900/60 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-          >
-            Cancel
-          </button>
+        <div className="p-4 sm:p-5 border-t border-slate-800/80 bg-slate-900/70 flex items-center justify-between">
+          <div className="text-xs font-mono text-slate-400 hidden sm:block">
+            {replaceMode ? 'Will replace existing map with clean roadmap.' : 'Will merge into current 3D map.'}
+          </div>
 
-          <button
-            type="button"
-            onClick={handleImport}
-            className="px-5 py-2.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-slate-950 shadow-lg shadow-purple-950/50 active:scale-95 transition-all cursor-pointer"
-          >
-            <UploadCloud className="w-4 h-4" />
-            Generate 3D Island Graph
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-mono font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              onClick={handleImport}
+              disabled={!parseResult || parseResult.nodes.length === 0}
+              className="px-5 py-2.5 rounded-xl text-xs font-mono font-bold flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-slate-950 shadow-lg shadow-purple-950/50 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <UploadCloud className="w-4 h-4" />
+              Generate 3D Island Graph
+            </button>
+          </div>
         </div>
 
       </div>

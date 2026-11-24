@@ -20,9 +20,7 @@ import {
   calculateWorldStats,
   getNodePrerequisites,
 } from './services/questGraphEngine';
-import { parseMarkdownToQuestGraph } from './services/markdownQuestParser';
 import {
-  playHoverBlip,
   playSelectTone,
   playCompleteFanfare,
   playUnlockWhoosh,
@@ -84,16 +82,21 @@ export const App: React.FC = () => {
     (nodeId: string) => {
       setSelectedNodeId(nodeId);
       setIsDrawerOpen(true);
-      playSelectTone();
     },
     []
   );
 
-  // Node hover audio trigger
-  const handleHoverNode = useCallback((nodeId: string | null, elevation?: number) => {
-    if (nodeId) {
-      playHoverBlip(elevation);
-    }
+  // Node hover audio trigger (handled internally by AtlasCanvas3D with region-tuned pitch)
+  const handleHoverNode = useCallback((_nodeId: string | null) => {
+    // Avoid double playback; Canvas handles spatial audio hover
+  }, []);
+
+  // Update notes on a landmark (Requirement 2.2 / Task 5)
+  const handleUpdateNotes = useCallback((nodeId: string, updatedNotes: string) => {
+    setWorldState((prev) => ({
+      ...prev,
+      nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, notes: updatedNotes } : n)),
+    }));
   }, []);
 
   // Quest Completion Handler
@@ -143,9 +146,25 @@ export const App: React.FC = () => {
 
   // Markdown Import Handler
   const handleImportGraph = useCallback(
-    (importedNodes: MapNode[], importedEdges: MapEdge[]) => {
+    (importedNodes: MapNode[], importedEdges: MapEdge[], replaceWorld: boolean) => {
       setWorldState((prev) => {
-        // Merge or replace graph
+        if (replaceWorld) {
+          const completedXp = importedNodes
+            .filter((n) => n.status === 'COMPLETED')
+            .reduce((sum, n) => sum + n.xpReward, 0);
+          const playerLevel = 1 + Math.floor(completedXp / 250);
+
+          return {
+            playerLevel,
+            totalXp: completedXp,
+            nodes: importedNodes,
+            edges: importedEdges,
+            selectedNodeId: null,
+            audioMuted: prev.audioMuted,
+          };
+        }
+
+        // Merge logic
         const mergedNodes = [...prev.nodes];
         const mergedEdges = [...prev.edges];
 
@@ -174,8 +193,10 @@ export const App: React.FC = () => {
         };
       });
 
+      setSelectedNodeId(null);
       setIsImportModalOpen(false);
-      playCompleteFanfare(2);
+      setCameraResetTrigger((c) => c + 1);
+      playCompleteFanfare(3);
     },
     []
   );
@@ -208,6 +229,8 @@ export const App: React.FC = () => {
         totalXp={worldState.totalXp}
         stats={stats}
         audioMuted={audioMutedState}
+        nodes={worldState.nodes}
+        onSelectNode={handleSelectNode}
         onToggleAudio={handleToggleAudio}
         onOpenAddQuest={() => setIsAddQuestModalOpen(true)}
         onOpenImportModal={() => setIsImportModalOpen(true)}
@@ -227,6 +250,7 @@ export const App: React.FC = () => {
         onClose={() => setIsDrawerOpen(false)}
         onCompleteQuest={handleCompleteQuest}
         onFocusNode={(nodeId) => handleSelectNode(nodeId)}
+        onUpdateNotes={handleUpdateNotes}
       />
 
       {/* Import Markdown / Kiro Spec Modal */}
@@ -234,10 +258,6 @@ export const App: React.FC = () => {
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onImportGraph={handleImportGraph}
-        parseMarkdownToGraph={(md) => {
-          const res = parseMarkdownToQuestGraph(md);
-          return { nodes: res.nodes, edges: res.edges };
-        }}
       />
 
       {/* Quick Add Quest Modal */}

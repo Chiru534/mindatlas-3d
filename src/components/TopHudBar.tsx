@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Compass, 
   Plus, 
@@ -6,18 +6,21 @@ import {
   RotateCcw, 
   Volume2, 
   VolumeX, 
-  Camera, 
   Sparkles, 
   CheckCircle2, 
-  Layers
+  Layers,
+  Search,
+  X
 } from 'lucide-react';
-import { WorldStats } from '../types/atlas';
+import { MapNode, WorldStats } from '../types/atlas';
 
 export interface TopHudBarProps {
   playerLevel: number;
   totalXp: number;
   stats?: WorldStats;
   audioMuted: boolean;
+  nodes?: MapNode[];
+  onSelectNode?: (nodeId: string) => void;
   onToggleAudio: () => void;
   onOpenAddQuest: () => void;
   onOpenImportModal: () => void;
@@ -30,12 +33,17 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
   totalXp,
   stats,
   audioMuted,
+  nodes = [],
+  onSelectNode,
   onToggleAudio,
   onOpenAddQuest,
   onOpenImportModal,
   onResetDemoWorld,
   onResetCamera,
 }) => {
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+
   // XP progression math: 250 XP per level
   const xpPerLevel = 250;
   const currentLevelProgress = totalXp % xpPerLevel;
@@ -46,6 +54,21 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
   const completedQuests = stats?.completedNodes ?? 0;
   const unlockedQuests = stats?.unlockedNodes ?? 0;
   const completionRatio = totalQuests > 0 ? Math.round((completedQuests / totalQuests) * 100) : 0;
+
+  // Search filter results
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return nodes
+      .filter((n) => n.title.toLowerCase().includes(q) || n.region.toLowerCase().includes(q) || (n.tags && n.tags.some((t) => t.toLowerCase().includes(q))))
+      .slice(0, 6);
+  }, [searchQuery, nodes]);
+
+  const handleSelectSearchResult = (nodeId: string) => {
+    onSelectNode?.(nodeId);
+    setSearchQuery('');
+    setIsSearchOpen(false);
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-40 px-3 py-2.5 sm:px-6 pointer-events-none">
@@ -69,105 +92,192 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
             </div>
             <p className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
               <span>Spatial Cartography</span>
-              <span className="text-cyan-500">•</span>
-              <span>DAG Knowledge Islands</span>
+              <span className="text-slate-600">•</span>
+              <span>DAG Engine</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-cyan-400">Web Audio</span>
             </p>
           </div>
         </div>
 
-        {/* Player Level & XP Telemetry Bar */}
-        <div className="flex-1 max-w-md w-full glass-panel px-4 py-2 rounded-xl border border-slate-700/60 shadow-lg shadow-black/40">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <div className="flex items-center gap-2">
-              <span className="flex items-center justify-center px-2 py-0.5 rounded font-mono font-bold text-xs bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 shadow-sm shadow-cyan-500/40">
-                LVL {playerLevel}
-              </span>
-              <span className="font-mono text-slate-300 font-semibold flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-                {totalXp} <span className="text-[10px] text-slate-500 font-normal">TOTAL XP</span>
-              </span>
-            </div>
-            <span className="font-mono text-[11px] text-cyan-400/90 font-medium">
-              {currentLevelProgress} / {xpPerLevel} XP <span className="text-slate-500">(-{xpNeeded})</span>
-            </span>
+        {/* Real-time Quest Search & Fly-To Filter */}
+        <div className="relative w-full md:w-64">
+          <div className="relative flex items-center">
+            <Search className="w-3.5 h-3.5 absolute left-3 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchOpen(true);
+              }}
+              onFocus={() => setIsSearchOpen(true)}
+              placeholder="Search 3D landmarks..."
+              className="w-full pl-8 pr-7 py-1.5 rounded-xl glass-panel text-xs font-mono text-slate-200 placeholder:text-slate-500 border border-slate-800 focus:border-cyan-500/50 focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setIsSearchOpen(false);
+                }}
+                className="absolute right-2 text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
+
+          {/* Autocomplete Dropdown */}
+          {isSearchOpen && searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1.5 rounded-xl glass-panel border border-cyan-500/30 shadow-2xl bg-slate-950/95 overflow-hidden z-50 font-mono text-xs max-h-56 overflow-y-auto">
+              {searchResults.map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  onClick={() => handleSelectSearchResult(node.id)}
+                  className="w-full text-left px-3 py-2 border-b border-slate-800/60 last:border-0 hover:bg-cyan-950/40 flex items-center justify-between text-slate-200"
+                >
+                  <div className="truncate mr-2">
+                    <div className="font-semibold truncate">{node.title}</div>
+                    <div className="text-[10px] text-slate-400">{node.region}</div>
+                  </div>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 ${
+                    node.status === 'COMPLETED' ? 'bg-yellow-500/20 text-yellow-300' :
+                    node.status === 'UNLOCKED' ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {node.status}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Player Telemetry, Level & XP HUD */}
+        <div className="flex items-center gap-3.5 glass-panel px-4 py-2 rounded-xl border border-slate-800 shadow-lg">
+          
+          {/* Level Hexagon Badge */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-500/20 to-amber-600/30 border border-yellow-500/50 text-yellow-400 font-extrabold font-mono text-sm shadow-inner shadow-yellow-500/20">
+              {playerLevel}
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-mono">
+                PIONEER
+              </div>
+              <div className="text-xs font-bold text-slate-200 font-mono">
+                {totalXp} <span className="text-[10px] font-normal text-slate-400">XP</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-px h-6 bg-slate-800" />
 
           {/* XP Progress Bar */}
-          <div className="relative w-full h-2 rounded-full bg-slate-900/90 border border-slate-700/50 overflow-hidden">
-            <div 
-              className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-sky-400 to-indigo-400 transition-all duration-700 ease-out shadow-sm shadow-cyan-400/50"
-              style={{ width: `${xpProgressPercent}%` }}
-            />
-            {/* Holographic shimmer */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse pointer-events-none" />
+          <div className="w-28 sm:w-36 space-y-1">
+            <div className="flex items-center justify-between text-[10px] font-mono">
+              <span className="text-slate-400">LVL {playerLevel + 1}</span>
+              <span className="text-cyan-400 font-semibold">{xpProgressPercent}%</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-slate-800/80 overflow-hidden p-0.5 border border-slate-700/50">
+              <div 
+                className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-sky-400 shadow-sm shadow-cyan-400 transition-all duration-500"
+                style={{ width: `${xpProgressPercent}%` }}
+              />
+            </div>
+            <div className="text-[9px] text-slate-400 font-mono text-right">
+              {xpNeeded} XP to next level
+            </div>
           </div>
 
-          {/* Territory Quests Ratio */}
-          <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-1">
-            <span className="flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-              Completed: <span className="text-emerald-300 font-semibold">{completedQuests}/{totalQuests}</span> ({completionRatio}%)
-            </span>
-            <span className="flex items-center gap-1">
-              <Layers className="w-3 h-3 text-cyan-400" />
-              Available: <span className="text-cyan-300 font-semibold">{unlockedQuests}</span>
-            </span>
+          <div className="w-px h-6 bg-slate-800 hidden sm:block" />
+
+          {/* Territory Unlock Statistics */}
+          <div className="hidden sm:flex items-center gap-2.5 font-mono text-[11px]">
+            <div className="text-center px-1">
+              <div className="text-yellow-400 font-bold flex items-center gap-1 justify-center">
+                <CheckCircle2 className="w-3 h-3" /> {completedQuests}
+              </div>
+              <div className="text-[9px] text-slate-400">MASTERED</div>
+            </div>
+
+            <div className="text-center px-1">
+              <div className="text-cyan-400 font-bold flex items-center gap-1 justify-center">
+                <Sparkles className="w-3 h-3" /> {unlockedQuests}
+              </div>
+              <div className="text-[9px] text-slate-400">UNLOCKED</div>
+            </div>
+
+            <div className="text-center px-1">
+              <div className="text-slate-300 font-bold flex items-center gap-1 justify-center">
+                <Layers className="w-3 h-3 text-slate-400" /> {completionRatio}%
+              </div>
+              <div className="text-[9px] text-slate-400">ATLAS %</div>
+            </div>
           </div>
         </div>
 
-        {/* Global Action Controls */}
-        <div className="flex items-center flex-wrap justify-end gap-1.5 glass-panel px-2.5 py-1.5 rounded-xl border border-slate-700/60 shadow-lg shadow-black/40">
+        {/* Global Action Toolbar */}
+        <div className="flex items-center gap-1.5 glass-panel p-1.5 rounded-xl border border-slate-800 shadow-lg">
           
-          {/* Add Quest */}
+          {/* Quick Add Quest Button */}
           <button
             onClick={onOpenAddQuest}
-            title="Create a new 3D knowledge landmark"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold font-mono bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 hover:border-cyan-400 transition-all active:scale-95 shadow-sm hover:shadow-cyan-500/20"
+            title="Create 3D Landmark & Highway"
+            aria-label="Add Quest Node"
+            className="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-200 bg-slate-800/60 hover:bg-cyan-950/60 hover:text-cyan-300 border border-slate-700 hover:border-cyan-500/50 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Add Quest</span>
+            <Plus className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden lg:inline">Add Quest</span>
           </button>
 
-          {/* Import Spec / Markdown */}
+          {/* Import Syllabus / Spec Button */}
           <button
             onClick={onOpenImportModal}
-            title="Import Kiro spec or syllabus markdown into 3D graph"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold font-mono bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/40 hover:border-purple-400 transition-all active:scale-95 shadow-sm hover:shadow-purple-500/20"
+            title="Import Markdown Syllabus or Spec"
+            aria-label="Import Markdown Spec"
+            className="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold text-slate-200 bg-slate-800/60 hover:bg-purple-950/60 hover:text-purple-300 border border-slate-700 hover:border-purple-500/50 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
           >
-            <FileCode2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Import Spec</span>
+            <FileCode2 className="w-3.5 h-3.5 text-purple-400" />
+            <span className="hidden lg:inline">Import Spec</span>
           </button>
 
-          {/* Reset Demo World (For Hackathon Judges) */}
-          <button
-            onClick={onResetDemoWorld}
-            title="Reset world to default 4-region demo DAG (For Hackathon Judges)"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold font-mono bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 hover:border-amber-400 transition-all active:scale-95 shadow-sm hover:shadow-amber-500/20"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Reset Demo</span>
-          </button>
+          <div className="w-px h-5 bg-slate-800 mx-0.5" />
 
-          {/* Camera Reset */}
+          {/* Camera Reset Overview Button */}
           <button
             onClick={onResetCamera}
-            title="Recenter 3D Camera view"
-            className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-300 bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 transition-all active:scale-95"
+            title="Reset Camera to Overview"
+            aria-label="Reset Camera"
+            className="p-2 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800/60 transition-colors"
           >
-            <Camera className="w-4 h-4" />
+            <Compass className="w-4 h-4" />
           </button>
 
           {/* Audio Synthesizer Mute Toggle */}
           <button
             onClick={onToggleAudio}
-            title={audioMuted ? 'Unmute Web Audio Synthesizer' : 'Mute Web Audio Synthesizer'}
-            className={`p-1.5 rounded-lg border transition-all active:scale-95 ${
+            title={audioMuted ? 'Unmute Web Audio Telemetry' : 'Mute Web Audio Telemetry'}
+            aria-label={audioMuted ? 'Unmute Audio' : 'Mute Audio'}
+            className={`p-2 rounded-lg transition-colors ${
               audioMuted 
-                ? 'bg-rose-500/15 border-rose-500/40 text-rose-400 hover:bg-rose-500/25' 
-                : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/25 shadow-sm shadow-emerald-500/20'
+                ? 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/60' 
+                : 'text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 shadow-sm shadow-cyan-950'
             }`}
           >
             {audioMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+
+          {/* Reset Demo World (Critical for Hackathon Judges) */}
+          <button
+            onClick={onResetDemoWorld}
+            title="Reset Demo World to Pristine State (Judge Demo Mode)"
+            aria-label="Reset Demo World"
+            className="p-2 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-slate-800/60 transition-colors"
+          >
+            <RotateCcw className="w-4 h-4" />
           </button>
 
         </div>
