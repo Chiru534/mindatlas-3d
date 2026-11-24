@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { MapNode, MapEdge, NodeStatus, Position3D } from '../types/atlas';
 import { REGIONS } from '../services/questGraphEngine';
 import { playHoverBlip, playSelectTone } from '../services/spatialAudioEngine';
@@ -108,6 +111,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const composerRef = useRef<EffectComposer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
 
@@ -151,6 +155,13 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     const map = new Map<string, MapNode>();
     nodes.forEach((n) => map.set(n.id, n));
     return map;
+  }, [nodes]);
+
+  // Active regions list for quick-jump toolbar
+  const activeRegionsList = useMemo(() => {
+    return Object.entries(REGIONS).filter(([regionName]) =>
+      nodes.some((n) => n.region === regionName)
+    );
   }, [nodes]);
 
   // Procedural Volumetric Radial Mist Texture (Smooth falloff, zero square blocks)
@@ -368,9 +379,23 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(width, height);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.25;
+    renderer.toneMappingExposure = 1.35;
     rendererRef.current = renderer;
     container.appendChild(renderer.domElement);
+
+    // 3.5 High-End UnrealBloomPass Post-Processing Pipeline
+    const composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(width, height),
+      1.25, // strength: glowing optical radiance
+      0.45, // radius: soft falloff
+      0.22  // threshold: triggers glow on emissive crystals, highways, cores, and shockwaves
+    );
+    composer.addPass(bloomPass);
+    composerRef.current = composer;
 
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -531,6 +556,9 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       camera.aspect = newWidth / newHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(newWidth, newHeight);
+      if (composerRef.current) {
+        composerRef.current.setSize(newWidth, newHeight);
+      }
     };
     window.addEventListener('resize', handleResize);
 
@@ -766,7 +794,11 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         });
       }
 
-      renderer.render(scene, camera);
+      if (composerRef.current) {
+        composerRef.current.render();
+      } else {
+        renderer.render(scene, camera);
+      }
     };
 
     animFrameIdRef.current = requestAnimationFrame(animate);
@@ -779,6 +811,11 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
       window.removeEventListener('resize', handleResize);
       controls.removeEventListener('start', onControlsStart);
       controls.dispose();
+
+      if (composerRef.current) {
+        composerRef.current.dispose();
+        composerRef.current = null;
+      }
 
       if (mistTextureRef.current) {
         mistTextureRef.current.dispose();
@@ -1737,28 +1774,30 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         </button>
       </div>
 
-      {/* Floating Region Quick Jump Bar */}
-      <div className="absolute bottom-6 left-6 z-30 hidden sm:flex items-center gap-2 pointer-events-auto bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800/80 backdrop-blur-md shadow-2xl">
-        {Object.entries(REGIONS).map(([regionName, theme]) => (
-          <button
-            key={regionName}
-            onClick={() => jumpToRegion(regionName)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all border border-transparent hover:border-slate-700"
-          >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: theme.color, boxShadow: `0 0 10px ${theme.color}` }}
-            />
-            <span>
-              {regionName
-                .replace(' Archipelago', '')
-                .replace(' Sanctuary', '')
-                .replace(' Citadel', '')
-                .replace(' Bastion', '')}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* Floating Region Quick Jump Bar (Centered horizontally, active regions only) */}
+      {activeRegionsList.length > 0 && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 hidden sm:flex items-center gap-2 pointer-events-auto bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800/80 backdrop-blur-md shadow-2xl shadow-black/80">
+          {activeRegionsList.map(([regionName, theme]) => (
+            <button
+              key={regionName}
+              onClick={() => jumpToRegion(regionName)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all border border-transparent hover:border-slate-700"
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: theme.color, boxShadow: `0 0 10px ${theme.color}` }}
+              />
+              <span>
+                {regionName
+                  .replace(' Archipelago', '')
+                  .replace(' Sanctuary', '')
+                  .replace(' Citadel', '')
+                  .replace(' Bastion', '')}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
