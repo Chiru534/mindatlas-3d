@@ -40,6 +40,7 @@ export const App: React.FC = () => {
   });
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [cameraResetTrigger, setCameraResetTrigger] = useState<number>(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [isAddQuestModalOpen, setIsAddQuestModalOpen] = useState<boolean>(false);
@@ -197,6 +198,8 @@ export const App: React.FC = () => {
         selectedNodeId={selectedNodeId}
         onSelectNode={handleSelectNode}
         onHoverNode={handleHoverNode}
+        cameraResetTrigger={cameraResetTrigger}
+        audioMuted={audioMutedState}
       />
 
       {/* Top HUD Bar */}
@@ -210,8 +213,8 @@ export const App: React.FC = () => {
         onOpenImportModal={() => setIsImportModalOpen(true)}
         onResetDemoWorld={handleResetDemoWorld}
         onResetCamera={() => {
-          // Deselect node to center overview
           setSelectedNodeId(null);
+          setCameraResetTrigger((c) => c + 1);
           playSelectTone();
         }}
       />
