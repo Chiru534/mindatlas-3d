@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import confetti from 'canvas-confetti';
 import { AtlasCanvas3D } from './components/AtlasCanvas3D';
+import { SyllabusOutlineView } from './components/SyllabusOutlineView';
 import { TopHudBar } from './components/TopHudBar';
 import { QuestInspectorDrawer } from './components/QuestInspectorDrawer';
 import { QuestImportModal } from './components/QuestImportModal';
 import { AddQuestModal } from './components/AddQuestModal';
+import { Rocket, FileText } from 'lucide-react';
 import {
   AtlasWorldState,
   MapNode,
@@ -40,6 +42,7 @@ export const App: React.FC = () => {
   });
 
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [currentViewMode, setCurrentViewMode] = useState<'3d' | 'syllabus'>('3d');
   const [cameraResetTrigger, setCameraResetTrigger] = useState<number>(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
@@ -53,6 +56,15 @@ export const App: React.FC = () => {
 
   // Derived statistics
   const stats = useMemo(() => calculateWorldStats(worldState), [worldState]);
+
+  // Next Recommended Mission (Up Next in Syllabus)
+  const nextMissionNode = useMemo(() => {
+    return (
+      worldState.nodes.find((n) => n.status === 'UNLOCKED') ||
+      worldState.nodes.find((n) => n.status === 'LOCKED') ||
+      null
+    );
+  }, [worldState.nodes]);
 
   // Selected node object
   const selectedNode = useMemo(() => {
@@ -216,17 +228,83 @@ export const App: React.FC = () => {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans select-none">
-      {/* 3D WebGL Three.js Canvas */}
-      <AtlasCanvas3D
-        nodes={worldState.nodes}
-        edges={worldState.edges}
-        selectedNodeId={selectedNodeId}
-        onSelectNode={handleSelectNode}
-        onHoverNode={handleHoverNode}
-        cameraResetTrigger={cameraResetTrigger}
-        audioMuted={audioMutedState}
-        isDrawerOpen={isDrawerOpen && selectedNode !== null}
-      />
+      {/* 3D WebGL Three.js Canvas Container */}
+      <div className={`w-full h-full ${currentViewMode === '3d' ? 'block' : 'hidden'}`}>
+        <AtlasCanvas3D
+          nodes={worldState.nodes}
+          edges={worldState.edges}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={handleSelectNode}
+          onHoverNode={handleHoverNode}
+          cameraResetTrigger={cameraResetTrigger}
+          audioMuted={audioMutedState}
+          isDrawerOpen={isDrawerOpen && selectedNode !== null}
+        />
+      </div>
+
+      {/* 2D Structured Syllabus Outline View */}
+      {currentViewMode === 'syllabus' && (
+        <div className="w-full h-full relative z-10">
+          <SyllabusOutlineView
+            nodes={worldState.nodes}
+            edges={worldState.edges}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={handleSelectNode}
+            onCompleteQuest={handleCompleteQuest}
+            onToggleSubTask={handleToggleSubTask}
+            onSwitchTo3D={(focusNodeId) => {
+              setCurrentViewMode('3d');
+              if (focusNodeId) {
+                handleSelectNode(focusNodeId);
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Persistent Mission Compass HUD Bar (3D Mode) */}
+      {currentViewMode === '3d' && nextMissionNode && !isDrawerOpen && (
+        <div className="fixed bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-auto max-w-xl w-[92vw] sm:w-auto">
+          <div className="glass-panel px-4 py-2.5 rounded-2xl border border-cyan-500/40 shadow-2xl shadow-cyan-950/80 bg-slate-950/90 backdrop-blur-md flex items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center shrink-0 text-cyan-400">
+                <Rocket className="w-4 h-4 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider flex items-center gap-1.5">
+                  <span>Current Mission</span>
+                  <span className="text-slate-600">•</span>
+                  <span className="text-slate-400">{nextMissionNode.region}</span>
+                </div>
+                <div className="font-bold text-slate-100 truncate text-xs sm:text-sm">
+                  {nextMissionNode.title}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  handleSelectNode(nextMissionNode.id);
+                  playSelectTone();
+                }}
+                className="px-3 py-1.5 rounded-xl font-bold bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 hover:from-cyan-400 hover:to-blue-500 shadow-md shadow-cyan-900/50 flex items-center gap-1 cursor-pointer transition-all active:scale-95 text-[11px]"
+              >
+                <span>Warp to Planet</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentViewMode('syllabus')}
+                title="View in Syllabus Outline"
+                className="p-1.5 rounded-xl bg-slate-800/80 text-slate-400 hover:text-white border border-slate-700 cursor-pointer"
+              >
+                <FileText className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top HUD Bar */}
       <TopHudBar
@@ -235,6 +313,8 @@ export const App: React.FC = () => {
         stats={stats}
         audioMuted={audioMutedState}
         nodes={worldState.nodes}
+        currentViewMode={currentViewMode}
+        onToggleViewMode={setCurrentViewMode}
         onSelectNode={handleSelectNode}
         onToggleAudio={handleToggleAudio}
         onOpenAddQuest={() => setIsAddQuestModalOpen(true)}

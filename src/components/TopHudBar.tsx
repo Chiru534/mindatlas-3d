@@ -26,6 +26,8 @@ export interface TopHudBarProps {
   onOpenImportModal: () => void;
   onResetDemoWorld: () => void;
   onResetCamera: () => void;
+  currentViewMode?: '3d' | 'syllabus';
+  onToggleViewMode?: (mode: '3d' | 'syllabus') => void;
 }
 
 export const TopHudBar: React.FC<TopHudBarProps> = ({
@@ -40,6 +42,8 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
   onOpenImportModal,
   onResetDemoWorld,
   onResetCamera,
+  currentViewMode = '3d',
+  onToggleViewMode,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
@@ -230,6 +234,36 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
               <div className="text-[9px] text-slate-400 uppercase">PROGRESS</div>
             </div>
           </div>
+        </div>
+
+        {/* Dual-Mode Viewport Toggle: 3D Galaxy vs Syllabus Outline */}
+        <div className="flex items-center glass-panel p-1 rounded-xl border border-cyan-500/30 shadow-lg shrink-0 font-mono text-xs">
+          <button
+            type="button"
+            onClick={() => onToggleViewMode?.('3d')}
+            title="3D Cosmic Planetary Knowledge Atlas"
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer font-bold ${
+              currentViewMode === '3d'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                : 'text-slate-400 hover:text-cyan-300'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5" />
+            <span>3D Cosmos</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggleViewMode?.('syllabus')}
+            title="Structured Curriculum & Syllabus Outline"
+            className={`px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer font-bold ${
+              currentViewMode === 'syllabus'
+                ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                : 'text-slate-400 hover:text-cyan-300'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Syllabus</span>
+          </button>
         </div>
 
         {/* Global Action Toolbar */}

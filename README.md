@@ -19,9 +19,13 @@
 
 ## 1. Executive Summary & The Frankenstein Metaphor
 
-Traditional syllabus outlines, learning roadmaps, and project management tools are flat, sterile, and demotivating. Text bullet points fail to convey dependency hierarchy, spatial relationship, or momentum.
+Traditional syllabus outlines, learning roadmaps, and curriculum trackers are flat, sterile, and demotivating. Text bullet points fail to convey dependency hierarchy, spatial relationship, or momentum.
 
-**MindAtlas 3D** resurrects flat task lists into a living, explorable 3D spatial knowledge terrain. Tasks become physical landmarks anchored across floating planetary islands. Uncompleted milestones remain shrouded in dark volumetric fog, while clearing prerequisites dissolves the mist, springs open luminous Catmull-Rom road highways, elevates golden monument crowns, and triggers procedural acoustic telemetry synthesized live in the browser.
+**MindAtlas 3D** transforms flat course syllabi into an explorable **Interstellar Planetary Galaxy System**. Subject domains become radiant star systems centered on luminous galactic suns, while individual lessons and modules orbit as textured 3D celestial planets with orbiting satellite moonlets for subtasks. Clearing prerequisites sends traveling photonic comets along interstellar warp conduits, de-cloaks cryo-stasis containment shields, terraforms barren worlds, and triggers procedural acoustic telemetry synthesized live in the browser.
+
+To solve the dual demands of **visual spectacle** and **pedagogical clarity**, MindAtlas 3D provides a seamless **Dual-Mode Architecture**:
+1. **`[ 🌌 3D Cosmic Galaxy ]`**: An immersive 60 FPS WebGL universe with orbital Keplerian tracks, planetary rings, warp conduits, and cinematic fly-to navigation.
+2. **`[ 📋 Structured Syllabus Outline ]`**: A clean, accessible curriculum roadmap with numbered steps (`01`, `02`...), module progress bars, subtask checklists, and direct 3D warp triggers.
 
 ### The Three Stitched Limbs of the Chimera
 
@@ -32,8 +36,8 @@ MindAtlas 3D deliberately stitches together three radically different computatio
 | Body Part | Technical Paradigm | Library / Stack | Role in MindAtlas 3D |
 | :--- | :--- | :--- | :--- |
 | **The Skeleton** | Discrete Graph Theory & Formal Compilers | Pure TypeScript Engine | Directed Acyclic Graph (DAG) with 3-color DFS cycle detection, topological ordering, and cascading status unlock propagation. |
-| **The Flesh & Eyes** | 3D Spatial Cartography & Shaders | Three.js WebGL + ACESFilmic Tone Mapping | 60 FPS spatial canvas with 4 floating regional islands, volumetric radial alpha fog-of-war, animated Catmull-Rom spline highways, and raycast interaction. |
-| **The Voice & Pulse** | Modular Acoustic DSP Synthesis | Browser Web Audio API (`AudioContext`) | 100% zero-asset procedural sound generation: region-tuned harmonic roots, elevation-to-pitch scaling, major-9th unlock fanfares, and an ethereal 55Hz space drone. |
+| **The Flesh & Eyes** | 3D Spatial Planetary WebGL Engine | Three.js WebGL + UnrealBloomPass HDR | 60 FPS cosmic universe with galactic star systems, textured 3D planets, Keplerian orbital rings, orbiting satellite moonlets, and interstellar warp conduits. |
+| **The Voice & Pulse** | Modular Acoustic DSP Synthesis | Browser Web Audio API (`AudioContext`) | 100% zero-asset procedural sound generation: sector-tuned harmonic roots, elevation-to-pitch scaling, major-9th unlock fanfares, and an ethereal 55Hz space drone. |
 | **The Brain** | Spec-Driven Agent Architecture | Kiro (`.kiro/steering/`, `.kiro/specs/`, `.kiro/hooks/`) | Formal EARS requirements, architectural designs, phased task contracts, and automated pre-save validation hooks. |
 
 ---
@@ -64,11 +68,20 @@ MindAtlas 3D was conceived, specified, and implemented under the **Kiro Spec-Dri
 
 ## 3. Core Features & User Workflows
 
-### 3.1 3D Spatial Cartography & Responsive Camera
-- **Dynamic Bounding & Overview Framing:** The camera mathematically computes the bounding center and radius of active islands, centering and framing desktop, tablet, and mobile portrait viewports without cropping.
-- **Raycast Hover & Holographic Tooltip:** Moving the cursor over any 3D landmark projects screen-space raycasting coordinates and renders a floating holographic telemetry card.
-- **Top-Down & Perspective Modes:** Switch between isometric 3D orbit view and orthographic-style top-down planning mode.
-- **Dynamic Unlock Animation:** Completed or unlocked landmarks trigger an in-memory sinusoidal spring pulse ($1.0 \times \rightarrow 1.4 \times$ scale) with an emissive surge before settling.
+### 3.1 Planetary Galaxy 3D Engine & Space Navigation
+- **Galactic Star Systems:** Each subject domain is anchored by a central radiant star with coronal flare auras, rotating accretion discs, and point lights.
+- **3D Celestial Planets:** Lessons are rendered as 3D planets with Keplerian orbit tracks:
+  - *TERRAFORMED (Completed):* Living emerald/golden world with Saturn-like rings, ascending sky beacon spire, and swirling golden stardust motes.
+  - *ACTIVE ORBIT (Unlocked):* Bioluminescent planet with active tectonic grid, equator telemetry ring, and 4 orbiting telemetry satellites.
+  - *IN STASIS (Locked):* Obsidian cryo-planet enveloped in a pulsating geodesic hex-stasis shield with crimson containment lasers.
+- **Subtask Moonlet Satellites:** Learning objectives orbit their parent planet as miniature moons, glowing emerald when completed.
+- **Interstellar Warp Conduits:** Translucent glass warp tubes carrying directional photonic comets from parent to dependent planets.
+- **Mission Compass HUD:** Persistent mission card pointing directly to your next objective with 1-click warp flight.
+
+### 3.2 Dual-Mode Syllabus Outline View
+- Instant 1-click toggle between `[ 🌌 3D Cosmos ]` and `[ 📋 Syllabus Outline ]`.
+- Sequential curriculum layout organized by sector/subject with step numbers (`#01`, `#02`...), subtask checkboxes, and in-place notes.
+- "Warp in 3D" button on every module smoothly switches into 3D and swoops the camera into an orbital close-up of that planet.
 
 ### 3.2 Dual-Format Markdown Spec Importer (v2)
 - Imports external syllabi, roadmaps, or curriculum documents into physical 3D terrain.
