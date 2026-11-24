@@ -225,6 +225,7 @@ export const App: React.FC = () => {
         onHoverNode={handleHoverNode}
         cameraResetTrigger={cameraResetTrigger}
         audioMuted={audioMutedState}
+        isDrawerOpen={isDrawerOpen && selectedNode !== null}
       />
 
       {/* Top HUD Bar */}
