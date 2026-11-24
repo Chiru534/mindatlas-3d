@@ -28,6 +28,7 @@ export interface QuestInspectorDrawerProps {
   onCompleteQuest: (nodeId: string) => void;
   onFocusNode?: (nodeId: string) => void;
   onUpdateNotes?: (nodeId: string, updatedNotes: string) => void;
+  onToggleSubTask?: (nodeId: string, subTaskId: string) => void;
 }
 
 interface SubTask {
@@ -44,6 +45,7 @@ export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
   onCompleteQuest,
   onFocusNode,
   onUpdateNotes,
+  onToggleSubTask,
 }) => {
   const [isEditingNotes, setIsEditingNotes] = useState<boolean>(false);
   const [editedNotes, setEditedNotes] = useState<string>('');
@@ -55,24 +57,28 @@ export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
       setEditedNotes(node.notes || '');
       setIsEditingNotes(false);
 
-      // Generate or parse sub-tasks for this quest (Requirement 2.2)
-      // Check if notes contain markdown bullet items
-      const lines = (node.notes || '').split('\n').filter((l) => l.trim().startsWith('- '));
-      if (lines.length > 0) {
-        setSubTasks(
-          lines.map((line, idx) => ({
-            id: `sub-${idx}`,
-            title: line.replace(/^-\s*(\[[ xX]\])?\s*/, '').trim(),
-            completed: line.includes('[x]') || line.includes('[X]') || node.status === 'COMPLETED',
-          }))
-        );
+      if (node.subTasks && node.subTasks.length > 0) {
+        setSubTasks(node.subTasks);
       } else {
-        // Default milestone sub-tasks based on node title
-        setSubTasks([
-          { id: 'sub-1', title: `Review foundational concepts for ${node.title}`, completed: node.status === 'COMPLETED' },
-          { id: 'sub-2', title: `Complete hands-on exercise / lab session`, completed: node.status === 'COMPLETED' },
-          { id: 'sub-3', title: `Verify implementation & clear dependencies`, completed: node.status === 'COMPLETED' },
-        ]);
+        // Generate or parse sub-tasks for this quest (Requirement 2.2)
+        // Check if notes contain markdown bullet items
+        const lines = (node.notes || '').split('\n').filter((l) => l.trim().startsWith('- '));
+        if (lines.length > 0) {
+          setSubTasks(
+            lines.map((line, idx) => ({
+              id: `sub-${idx}`,
+              title: line.replace(/^-\s*(\[[ xX]\])?\s*/, '').trim(),
+              completed: line.includes('[x]') || line.includes('[X]') || node.status === 'COMPLETED',
+            }))
+          );
+        } else {
+          // Default milestone sub-tasks based on node title
+          setSubTasks([
+            { id: 'sub-1', title: `Review foundational concepts for ${node.title}`, completed: node.status === 'COMPLETED' },
+            { id: 'sub-2', title: `Complete hands-on exercise / lab session`, completed: node.status === 'COMPLETED' },
+            { id: 'sub-3', title: `Verify implementation & clear dependencies`, completed: node.status === 'COMPLETED' },
+          ]);
+        }
       }
     }
   }, [node]);
@@ -103,6 +109,9 @@ export const QuestInspectorDrawer: React.FC<QuestInspectorDrawerProps> = ({
     setSubTasks((prev) =>
       prev.map((st) => (st.id === subTaskId ? { ...st, completed: !st.completed } : st))
     );
+    if (node) {
+      onToggleSubTask?.(node.id, subTaskId);
+    }
   };
 
   const handleSaveNotes = () => {

@@ -6,6 +6,12 @@ export interface Position3D {
   z: number;
 }
 
+export interface SubTask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
 export interface MapNode {
   id: string;
   title: string;
@@ -17,6 +23,7 @@ export interface MapNode {
   prerequisites: string[]; // IDs of parent nodes that must be COMPLETED first
   color?: string;
   tags?: string[];
+  subTasks?: SubTask[];
 }
 
 export interface MapEdge {

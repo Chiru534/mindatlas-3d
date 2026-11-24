@@ -75,33 +75,46 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3 pointer-events-auto">
         
         {/* Brand & Theme Pill */}
-        <div className="flex items-center gap-3 glass-panel px-3.5 py-2 rounded-xl border border-cyan-500/30 shadow-lg shadow-cyan-950/40">
-          <div className="relative flex items-center justify-center w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-400/40 text-cyan-400">
-            <Compass className="w-5 h-5 animate-spin" style={{ animationDuration: '24s' }} />
-            <div className="absolute inset-0 rounded-lg blur-sm bg-cyan-400/20" />
+        <div className="flex items-center justify-between w-full md:w-auto gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 glass-panel px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border border-cyan-500/30 shadow-lg shadow-cyan-950/40 shrink-0 whitespace-nowrap">
+            <div className="relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-400/40 text-cyan-400">
+              <Compass className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" style={{ animationDuration: '24s' }} />
+              <div className="absolute inset-0 rounded-lg blur-sm bg-cyan-400/20" />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm sm:text-base tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-indigo-200 font-mono">
+                  MINDATLAS 3D
+                </span>
+                <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 text-purple-300 shadow-sm shadow-purple-900/50">
+                  Frankenstein 2026
+                </span>
+              </div>
+              <p className="hidden sm:flex text-[11px] text-slate-400 font-mono items-center gap-1.5 whitespace-nowrap">
+                <span>Spatial Cartography</span>
+                <span className="text-slate-600">•</span>
+                <span>DAG Engine</span>
+                <span className="text-slate-600">•</span>
+                <span className="text-cyan-400">Web Audio</span>
+              </p>
+            </div>
           </div>
 
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-base tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-indigo-200 font-mono">
-                MINDATLAS 3D
-              </span>
-              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/40 text-purple-300 shadow-sm shadow-purple-900/50">
-                Frankenstein 2026
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5">
-              <span>Spatial Cartography</span>
-              <span className="text-slate-600">•</span>
-              <span>DAG Engine</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-cyan-400">Web Audio</span>
-            </p>
-          </div>
+          {/* Mobile search toggle button */}
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen((prev) => !prev)}
+            title="Search Landmarks"
+            aria-label="Toggle Search"
+            className="md:hidden p-2 rounded-xl glass-panel border border-slate-800 text-slate-400 hover:text-cyan-300"
+          >
+            <Search className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Real-time Quest Search & Fly-To Filter */}
-        <div className="relative w-full md:w-64">
+        <div className={`relative w-full md:w-60 lg:w-72 ${isSearchOpen ? 'block' : 'hidden md:block'}`}>
           <div className="relative flex items-center">
             <Search className="w-3.5 h-3.5 absolute left-3 text-slate-400 pointer-events-none" />
             <input
@@ -156,16 +169,16 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
         </div>
 
         {/* Player Telemetry, Level & XP HUD */}
-        <div className="flex items-center gap-3.5 glass-panel px-4 py-2 rounded-xl border border-slate-800 shadow-lg">
+        <div className="flex items-center gap-2.5 sm:gap-3.5 glass-panel px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl border border-slate-800 shadow-lg shrink-0">
           
           {/* Level Hexagon Badge */}
           <div className="flex items-center gap-2">
-            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-500/20 to-amber-600/30 border border-yellow-500/50 text-yellow-400 font-extrabold font-mono text-sm shadow-inner shadow-yellow-500/20">
+            <div className="relative flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-yellow-500/20 to-amber-600/30 border border-yellow-500/50 text-yellow-400 font-extrabold font-mono text-xs sm:text-sm shadow-inner shadow-yellow-500/20">
               {playerLevel}
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-mono">
-                PIONEER
+              <div className="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-400 font-mono">
+                LEVEL {playerLevel}
               </div>
               <div className="text-xs font-bold text-slate-200 font-mono">
                 {totalXp} <span className="text-[10px] font-normal text-slate-400">XP</span>
@@ -176,9 +189,9 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
           <div className="w-px h-6 bg-slate-800" />
 
           {/* XP Progress Bar */}
-          <div className="w-28 sm:w-36 space-y-1">
+          <div className="w-24 sm:w-36 space-y-1">
             <div className="flex items-center justify-between text-[10px] font-mono">
-              <span className="text-slate-400">LVL {playerLevel + 1}</span>
+              <span className="text-slate-400">NEXT LVL {playerLevel + 1}</span>
               <span className="text-cyan-400 font-semibold">{xpProgressPercent}%</span>
             </div>
             <div className="w-full h-1.5 rounded-full bg-slate-800/80 overflow-hidden p-0.5 border border-slate-700/50">
@@ -187,7 +200,7 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
                 style={{ width: `${xpProgressPercent}%` }}
               />
             </div>
-            <div className="text-[9px] text-slate-400 font-mono text-right">
+            <div className="hidden sm:block text-[9px] text-slate-400 font-mono text-right">
               {xpNeeded} XP to next level
             </div>
           </div>
@@ -214,13 +227,13 @@ export const TopHudBar: React.FC<TopHudBarProps> = ({
               <div className="text-slate-300 font-bold flex items-center gap-1 justify-center">
                 <Layers className="w-3 h-3 text-slate-400" /> {completionRatio}%
               </div>
-              <div className="text-[9px] text-slate-400">ATLAS %</div>
+              <div className="text-[9px] text-slate-400 uppercase">PROGRESS</div>
             </div>
           </div>
         </div>
 
         {/* Global Action Toolbar */}
-        <div className="flex items-center gap-1.5 glass-panel p-1.5 rounded-xl border border-slate-800 shadow-lg">
+        <div className="flex items-center gap-1.5 glass-panel p-1.5 rounded-xl border border-slate-800 shadow-lg shrink-0">
           
           {/* Quick Add Quest Button */}
           <button

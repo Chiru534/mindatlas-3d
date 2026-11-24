@@ -86,20 +86,59 @@ function createSoftMistTexture(): THREE.Texture {
 }
 
 /**
- * Calculates responsive camera overview coordinates based on viewport aspect ratio.
+ * Computes bounding box and center of active landmarks.
  */
-function getAdaptiveCameraOverview(width: number, height: number): { x: number; y: number; z: number; lookAtY: number } {
+function getNodesBoundingBox(nodes: MapNode[]): { centerX: number; centerZ: number; span: number } {
+  if (nodes.length === 0) return { centerX: 0, centerZ: 0, span: 75 };
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  nodes.forEach((n) => {
+    minX = Math.min(minX, n.position.x);
+    maxX = Math.max(maxX, n.position.x);
+    minZ = Math.min(minZ, n.position.z);
+    maxZ = Math.max(maxZ, n.position.z);
+  });
+  const centerX = (minX + maxX) / 2;
+  const centerZ = (minZ + maxZ) / 2;
+  const span = Math.max(30, Math.max(maxX - minX, maxZ - minZ) + 24);
+  return { centerX, centerZ, span };
+}
+
+/**
+ * Calculates responsive camera overview coordinates dynamically centered and scaled to active islands.
+ */
+function getAdaptiveCameraOverview(
+  width: number,
+  height: number,
+  nodes: MapNode[] = []
+): { x: number; y: number; z: number; lookAtX: number; lookAtY: number; lookAtZ: number } {
   const aspect = width / Math.max(1, height);
+  const { centerX, centerZ, span } = getNodesBoundingBox(nodes);
+  const scale = Math.max(0.65, Math.min(1.3, span / 75));
+
+  let baseY = 64;
+  let baseZ = 76;
+  let lookAtY = 2;
+
   if (aspect < 0.85) {
     // Mobile Portrait
-    return { x: 0, y: 96, z: 110, lookAtY: 4 };
+    baseY = 96;
+    baseZ = 110;
+    lookAtY = 4;
   } else if (aspect < 1.25) {
     // Tablet / Square
-    return { x: 0, y: 76, z: 88, lookAtY: 3 };
-  } else {
-    // Desktop Landscape
-    return { x: 0, y: 64, z: 76, lookAtY: 2 };
+    baseY = 76;
+    baseZ = 88;
+    lookAtY = 3;
   }
+
+  return {
+    x: centerX,
+    y: baseY * scale,
+    z: centerZ + baseZ * scale,
+    lookAtX: centerX,
+    lookAtY,
+    lookAtZ: centerZ,
+  };
 }
 
 export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
@@ -215,18 +254,25 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     }
   }, []);
 
+  // Active regions list for quick-jump toolbar
+  const activeRegionsList = useMemo(() => {
+    return Object.entries(REGIONS).filter(([regionName]) =>
+      nodes.some((n) => n.region === regionName)
+    );
+  }, [nodes]);
+
   const resetCameraToOverview = useCallback(() => {
     const container = mountRef.current;
     const w = container?.clientWidth || window.innerWidth;
     const h = container?.clientHeight || window.innerHeight;
-    const adaptive = getAdaptiveCameraOverview(w, h);
+    const adaptive = getAdaptiveCameraOverview(w, h, nodes);
 
     targetCamPosRef.current.set(adaptive.x, adaptive.y, adaptive.z);
-    targetControlsLookAtRef.current.set(0, adaptive.lookAtY, 0);
+    targetControlsLookAtRef.current.set(adaptive.lookAtX, adaptive.lookAtY, adaptive.lookAtZ);
     isTransitioningCameraRef.current = true;
     setIsTopDownView(false);
     onRequestResetCamera?.();
-  }, [onRequestResetCamera]);
+  }, [nodes, onRequestResetCamera]);
 
   // Handle external camera reset trigger
   useEffect(() => {
@@ -288,7 +334,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     scene.fog = new THREE.FogExp2(0x060913, 0.007);
 
     // 2. Camera with adaptive overview framing
-    const adaptive = getAdaptiveCameraOverview(width, height);
+    const adaptive = getAdaptiveCameraOverview(width, height, nodes);
     const camera = new THREE.PerspectiveCamera(46, width / height, 0.5, 1000);
     camera.position.set(adaptive.x, adaptive.y, adaptive.z);
     cameraRef.current = camera;
@@ -313,7 +359,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
     controls.maxPolarAngle = Math.PI / 2 - 0.04;
     controls.minDistance = 10;
     controls.maxDistance = 220;
-    controls.target.set(0, adaptive.lookAtY, 0);
+    controls.target.set(adaptive.lookAtX, adaptive.lookAtY, adaptive.lookAtZ);
     controlsRef.current = controls;
 
     const onControlsStart = () => {
@@ -723,7 +769,7 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         });
         const sprite = new THREE.Sprite(spriteMat);
         sprite.name = 'island-label';
-        sprite.position.set(0, 3.8, radius * 0.9);
+        sprite.position.set(0, 4.2, radius * 0.65);
         sprite.scale.set(14, 7, 1);
         islandGroup.add(sprite);
       }
@@ -1386,22 +1432,24 @@ export const AtlasCanvas3D: React.FC<AtlasCanvas3DProps> = ({
         </button>
       </div>
 
-      {/* Floating Region Quick Jump Bar */}
-      <div className="absolute bottom-6 left-6 z-30 hidden sm:flex items-center gap-2 pointer-events-auto bg-slate-950/70 p-1.5 rounded-2xl border border-slate-800/80 backdrop-blur-md">
-        {Object.entries(REGIONS).map(([regionName, theme]) => (
-          <button
-            key={regionName}
-            onClick={() => focusCameraOnPosition(theme.center.x, theme.center.y, theme.center.z)}
-            className="px-3 py-1.5 rounded-xl text-[11px] font-mono font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800/60 transition-colors flex items-center gap-1.5"
-          >
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: theme.color }}
-            />
-            <span>{theme.name.replace(/ Archipelago| Citadel| Sanctuary| Bastion/g, '')}</span>
-          </button>
-        ))}
-      </div>
+      {/* Floating Region Quick Jump Bar (Centered horizontally, active regions only) */}
+      {activeRegionsList.length > 0 && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 hidden sm:flex items-center gap-2 pointer-events-auto bg-slate-950/80 p-1.5 rounded-2xl border border-slate-800/80 backdrop-blur-md shadow-xl shadow-black/60">
+          {activeRegionsList.map(([regionName, theme]) => (
+            <button
+              key={regionName}
+              onClick={() => focusCameraOnPosition(theme.center.x, theme.center.y, theme.center.z)}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-mono font-medium text-slate-300 hover:text-slate-100 hover:bg-slate-800/60 transition-colors flex items-center gap-1.5"
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: theme.color }}
+              />
+              <span>{theme.name.replace(/ Archipelago| Citadel| Sanctuary| Bastion/g, '')}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

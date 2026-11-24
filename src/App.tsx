@@ -19,6 +19,8 @@ import {
   addCustomNode,
   calculateWorldStats,
   getNodePrerequisites,
+  toggleNodeSubTask,
+  updateNodeNotes,
 } from './services/questGraphEngine';
 import {
   playSelectTone,
@@ -93,10 +95,12 @@ export const App: React.FC = () => {
 
   // Update notes on a landmark (Requirement 2.2 / Task 5)
   const handleUpdateNotes = useCallback((nodeId: string, updatedNotes: string) => {
-    setWorldState((prev) => ({
-      ...prev,
-      nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, notes: updatedNotes } : n)),
-    }));
+    setWorldState((prev) => updateNodeNotes(prev, nodeId, updatedNotes));
+  }, []);
+
+  // Toggle sub-task handler (Requirement 2.2)
+  const handleToggleSubTask = useCallback((nodeId: string, subTaskId: string) => {
+    setWorldState((prev) => toggleNodeSubTask(prev, nodeId, subTaskId));
   }, []);
 
   // Quest Completion Handler
@@ -251,6 +255,7 @@ export const App: React.FC = () => {
         onCompleteQuest={handleCompleteQuest}
         onFocusNode={(nodeId) => handleSelectNode(nodeId)}
         onUpdateNotes={handleUpdateNotes}
+        onToggleSubTask={handleToggleSubTask}
       />
 
       {/* Import Markdown / Kiro Spec Modal */}

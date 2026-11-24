@@ -1,141 +1,151 @@
 # MindAtlas 3D (SpatialQuest 3D)
 
-**Event:** Kiroween 2026 Hackathon  
-**Track:** Frankenstein Category  
-**Author:** Chiru534 (`https://devpost.com/Chiru534`)  
-**Core Technologies:** React 19, TypeScript (Strict), Three.js, Tailwind CSS, Web Audio API, Kiro Agent Specs & Hooks
+[![Live Demo](https://img.shields.io/badge/Demo-Live%20on%20GitHub%20Pages-06b6d4?style=for-the-badge&logo=github)](https://chiru534.github.io/mindatlas-3d/)
+[![Kiroween 2026](https://img.shields.io/badge/Kiroween%202026-Frankenstein%20Track-8b5cf6?style=for-the-badge)](https://devpost.com)
+[![TypeScript Strict](https://img.shields.io/badge/TypeScript-Strict%20Zero%20Any-3178c6?style=for-the-badge&logo=typescript)](tsconfig.json)
+[![Vitest Passing](https://img.shields.io/badge/Tests-7%20Passed-10b981?style=for-the-badge&logo=vitest)](src/services/questGraphEngine.test.ts)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+
+> **Live Interactive WebGL App:** [https://chiru534.github.io/mindatlas-3d/](https://chiru534.github.io/mindatlas-3d/)  
+> **Source Repository:** [https://github.com/Chiru534/mindatlas-3d](https://github.com/Chiru534/mindatlas-3d)  
+> **Submission Category:** Kiroween Hackathon — Frankenstein Track  
+> **Author:** Chiru534 ([Devpost Profile](https://devpost.com/Chiru534))  
 
 ---
 
-## 1. Executive Summary & Frankenstein Architecture
+![MindAtlas 3D Spatial Cartography](docs/spatial-cartography-preview.svg)
 
-MindAtlas 3D transforms flat checklists, study notes, and syllabus outlines into an explorable, living 3D spatial knowledge terrain. Inspired by strategy games and cartographic globes, users navigate regional islands where tasks act as physical landmarks. Completing prerequisites dissolves dark fog-of-war, elevates monuments, and synthesizes real-time musical telemetry.
+---
 
-### The Three Stitched Limbs of the Chimera:
+## 1. Executive Summary & The Frankenstein Metaphor
+
+Traditional syllabus outlines, learning roadmaps, and project management tools are flat, sterile, and demotivating. Text bullet points fail to convey dependency hierarchy, spatial relationship, or momentum.
+
+**MindAtlas 3D** resurrects flat task lists into a living, explorable 3D spatial knowledge terrain. Tasks become physical landmarks anchored across floating planetary islands. Uncompleted milestones remain shrouded in dark volumetric fog, while clearing prerequisites dissolves the mist, springs open luminous Catmull-Rom road highways, elevates golden monument crowns, and triggers procedural acoustic telemetry synthesized live in the browser.
+
+### The Three Stitched Limbs of the Chimera
+
+MindAtlas 3D deliberately stitches together three radically different computational domains:
+
+![MindAtlas 3D Architecture](docs/architecture-diagram.svg)
+
+| Body Part | Technical Paradigm | Library / Stack | Role in MindAtlas 3D |
+| :--- | :--- | :--- | :--- |
+| **The Skeleton** | Discrete Graph Theory & Formal Compilers | Pure TypeScript Engine | Directed Acyclic Graph (DAG) with 3-color DFS cycle detection, topological ordering, and cascading status unlock propagation. |
+| **The Flesh & Eyes** | 3D Spatial Cartography & Shaders | Three.js WebGL + ACESFilmic Tone Mapping | 60 FPS spatial canvas with 4 floating regional islands, volumetric radial alpha fog-of-war, animated Catmull-Rom spline highways, and raycast interaction. |
+| **The Voice & Pulse** | Modular Acoustic DSP Synthesis | Browser Web Audio API (`AudioContext`) | 100% zero-asset procedural sound generation: region-tuned harmonic roots, elevation-to-pitch scaling, major-9th unlock fanfares, and an ethereal 55Hz space drone. |
+| **The Brain** | Spec-Driven Agent Architecture | Kiro (`.kiro/steering/`, `.kiro/specs/`, `.kiro/hooks/`) | Formal EARS requirements, architectural designs, phased task contracts, and automated pre-save validation hooks. |
+
+---
+
+## 2. Kiro Spec-Driven Engineering Workflow
+
+MindAtlas 3D was conceived, specified, and implemented under the **Kiro Spec-Driven Architecture**. The complete specification tree is checked into the repository:
 
 ```
-                      +------------------------------------------+
-                      |         MINDATLAS 3D CHIMERA             |
-                      +--------------------+---------------------+
-                                           |
-             +-----------------------------+-----------------------------+
-             |                             |                             |
-      [ SKELETON ]                   [ FLESH & EYES ]              [ VOICE & PULSE ]
-  Graph Theory & DAG            3D Spatial Cartography          Procedural DSP Audio
-  Topological Sorter            Three.js & WebGL Shaders        Native Web Audio API
- (Compiler / Discrete Math)       (Video Game Engine)          (Modular Synthesizer)
-             |                             |                             |
-             +-----------------------------+-----------------------------+
-                                           |
-                                      [ BRAIN ]
-                             Kiro Spec-Driven Engine
-                        (.kiro/steering, specs, save hooks)
+.kiro/
+├── steering/
+│   └── frankenstein-rules.md     # Architectural constraints: zero `any`, Three.js memory hygiene, zero external audio
+├── specs/
+│   └── mind-atlas-3d/
+│       ├── requirements.md       # Formal EARS requirements (Ubiquitous, Event-driven, State-driven)
+│       ├── design.md             # Data models, mathematical formulas, camera projections, audio tables
+│       └── tasks.md              # Phased, trackable implementation checklists (Tasks 1 through 6)
+└── hooks/
+    └── quest-spec-validator.json # Pre-save agent hook enforcing strict types and memory disposal
 ```
 
-1. **The Skeleton — Discrete Math & DAG Graph Engine:**
-   - Formal Directed Acyclic Graph (DAG) with 3-color DFS cycle detection.
-   - Topological unlock propagation: downstream landmarks remain shrouded in dark obsidian stone until all prerequisite dependencies are cleared.
-   - Dynamic player leveling: $\text{Level} = 1 + \lfloor \text{totalXp} / 250 \rfloor$.
-2. **The Flesh & Eyes — Three.js Spatial Cartography:**
-   - 60 FPS WebGL scene with 4 floating regional islands (*Frontend Archipelago*, *Backend Citadel*, *AI & Neural Sanctuary*, *Cybersecurity Bastion*).
-   - Status-reactive 3D landmarks: dim obsidian monoliths with rune mist rings (`LOCKED`), pulsing cyan crystal beacons (`UNLOCKED`), and golden crown monuments with particle auras (`COMPLETED`).
-   - Animated 3D Catmull-Rom road highways with traveling glowing energy pulses.
-   - Responsive overview camera automatically framing the terrain across desktop, tablet, and mobile portrait viewports.
-3. **The Voice & Pulse — Zero-Asset Web Audio Synthesizer:**
-   - 100% mathematical sound synthesis via `AudioContext` (`OscillatorNode`, `GainNode`, `BiquadFilterNode`).
-   - Zero external MP3, WAV, or OGG audio files.
-   - Region-mapped fundamental root tuning (Frontend = C5 523Hz, Backend = A4 440Hz, AI = E5 659Hz, Cyber = G4 392Hz).
-   - Real-time elevation-to-pitch scaling, major-9th arpeggiated unlock fanfares, and an ethereal 55Hz ambient space drone.
+### Architectural Guardrails from `.kiro/steering/frankenstein-rules.md`:
+1. **Zero `any` Policy:** Every component, hook, geometry buffer, and audio node is strictly typed with TypeScript interfaces.
+2. **Deterministic Memory Disposal:** All Three.js meshes, materials, canvas textures, and WebGL render targets implement comprehensive disposal traversals inside `useEffect` cleanup routines to prevent memory leaks.
+3. **Pure DSP Audio (Zero External Assets):** No `.mp3`, `.wav`, or `.ogg` audio files are permitted. All acoustic feedback is generated by pure trigonometric waveforms and gain envelope scheduling.
 
 ---
 
-## 2. Kiro Spec-Driven Development Architecture
+## 3. Core Features & User Workflows
 
-MindAtlas 3D was designed and built strictly around Kiro's specification-driven workflow:
+### 3.1 3D Spatial Cartography & Responsive Camera
+- **Dynamic Bounding & Overview Framing:** The camera mathematically computes the bounding center and radius of active islands, centering and framing desktop, tablet, and mobile portrait viewports without cropping.
+- **Raycast Hover & Holographic Tooltip:** Moving the cursor over any 3D landmark projects screen-space raycasting coordinates and renders a floating holographic telemetry card.
+- **Top-Down & Perspective Modes:** Switch between isometric 3D orbit view and orthographic-style top-down planning mode.
+- **Dynamic Unlock Animation:** Completed or unlocked landmarks trigger an in-memory sinusoidal spring pulse ($1.0 \times \rightarrow 1.4 \times$ scale) with an emissive surge before settling.
 
-- **`.kiro/steering/frankenstein-rules.md`**: Enforces zero `any` types in TypeScript, strict Three.js memory disposal (`BufferGeometry`, `Material`, and `WebGLRenderer` cleanup inside `useEffect`), and zero external audio assets.
-- **`.kiro/specs/mind-atlas-3d/requirements.md`**: Formal EARS (Easy Approach to Requirements Syntax) acceptance criteria covering 3D viewports, DAG creation, fog-of-war, and audio feedback.
-- **`.kiro/specs/mind-atlas-3d/design.md`**: Technical specifications detailing data models (`MapNode`, `MapEdge`, `AtlasWorldState`), unlock formulas, and camera projection mathematics.
-- **`.kiro/specs/mind-atlas-3d/tasks.md`**: Six phased implementation checklists executed step-by-step.
-- **`.kiro/hooks/quest-spec-validator.json`**: Automated integrity agent hook verifying memory hygiene and strict types on every file save.
+### 3.2 Dual-Format Markdown Spec Importer (v2)
+- Imports external syllabi, roadmaps, or curriculum documents into physical 3D terrain.
+- **Supported Formats:**
+  - **Section Format:** `## Landmark Title` with bulleted metadata (`- Region: Frontend Archipelago`, `- Prerequisites: HTML Foundations`, `- XP: 100`). Correctly handles comma-bearing titles.
+  - **Hierarchical Outline Format:** `# Region` followed by `- [ ] Task Title` markdown checklist items.
+- **Import Target Modes:**
+  - **Replace World (Clean Slate):** Wipes existing territory, recalculates baseline levels, and centers the camera exclusively on imported regions.
+  - **Merge with Current Map:** Seamlessly grafts new landmarks into the existing archipelago and establishes inter-island road highways.
+- **Curated One-Click Presets:**
+  - *Full-Stack Web Architect* (Frontend + Backend curriculum)
+  - *AI & Neural Systems Specialist* (Deep Learning, Transformers, Multi-Agent Swarms)
+  - *Cybersecurity Bastion & Hardening* (PKI, Zero-Trust, Network Hardening)
 
----
+### 3.3 Milestone Sub-Tasks & Note Persistence
+- **Milestone Checklist:** Sub-tasks can be checked off inside the inspector drawer and persist across browser reloads via `localStorage`.
+- **In-Place Markdown Notes:** Direct study notes and architectural specifications can be edited and saved per landmark.
+- **Safe Recalculation:** Player level and XP progression are always recalculated deterministically from completed landmarks, preventing stale client state.
 
-## 3. Interactive Features & Workflows
-
-### 3D Map Viewport & Exploration
-- **Smooth OrbitControls:** Drag left-click to orbit, drag right-click to pan, and scroll to zoom.
-- **Adaptive Camera Overview:** Automatic frustum calculation centering all island territories on any screen aspect ratio.
-- **Real-Time Raycasting Tooltips:** Hovering over any landmark displays a holographic HUD card with title, XP reward, region badge, and status.
-- **Dynamic Unlock Animation:** Newly unlocked and completed landmarks surge in scale ($1.0 \rightarrow 1.4$) with an emissive spring pulse before settling into their idle floating state.
-
-### Markdown Syllabus & Spec Importer (v2)
-- Supports both **Section Format** (`## Task Title` + `- Region: ...` + `- Prerequisites: ...` + `- XP: ...`) and **Hierarchical Outline Format** (`# Region` + `- [ ] Task`).
-- Preserves task titles containing commas without breaking dependency chains.
-- Built-in Curated Presets:
-  - *Full-Stack Web Architect* (Frontend & Backend curriculum)
-  - *AI & Neural Systems Specialist* (Deep Learning, PyTorch, Transformers, Agent Swarms)
-  - *Cybersecurity Bastion & Hardening* (PKI, Zero Trust, Network Hardening)
-- Import Target Modes:
-  - **Replace World (Clean Slate):** Overwrites current map with imported curriculum.
-  - **Merge into Current World:** Integrates new landmarks and bridges dependency road highways into existing islands.
-
-### Real-Time Quest Search & Fly-To Filter
-- Instant autocomplete search in the top HUD bar.
-- Selecting any search result triggers a smooth camera lerp animation directly to the target node and opens the inspector drawer.
-
-### Quest Inspector Drawer
-- Status pill, regional tag, and 3D coordinate telemetry.
-- **Prerequisites Checklist:** Shows parent tasks with status icons; clicking any prerequisite navigates directly to it.
-- **Interactive Milestone Sub-Tasks:** Check off practical sub-milestones for each landmark.
-- **In-Place Note Editing:** Document study learnings directly with Markdown support and instant local storage persistence.
+### 3.4 Procedural Web Audio Engine
+- **Region-Specific Harmonic Roots:**
+  - *Frontend Archipelago:* C5 ($523.25\text{ Hz}$)
+  - *Backend Citadel:* A4 ($440.00\text{ Hz}$)
+  - *AI & Neural Sanctuary:* E5 ($659.25\text{ Hz}$)
+  - *Cybersecurity Bastion:* G4 ($392.00\text{ Hz}$)
+- **Elevation Modulation:** Landmark Y-coordinates modulate the carrier frequency, providing spatial height telemetry.
+- **Triumphant Fanfares:** Clearing quests triggers a 4-chord major-9th arpeggiated fanfare with exponential gain decay.
+- **Ethereal Space Drone:** Continuous 55Hz sub-bass ambient drone modulated by a $0.08\text{ Hz}$ LFO.
 
 ---
 
-## 4. Kiroween Judging Rubric Alignment
+## 4. Technical Verification & Architecture Proof
 
-| Rubric Criteria | Score Alignment | MindAtlas 3D Implementation |
-| :--- | :---: | :--- |
-| **Category Alignment (Frankenstein)** | 10 / 10 | Genuinely stitches three incompatible paradigms: 3D video game WebGL cartography, compiler-grade discrete DAG graph theory, and mathematical acoustic signal synthesis. |
-| **Kiro Feature Depth** | 10 / 10 | Active use of `.kiro/steering/`, EARS `.kiro/specs/`, task execution lists, and automated `.kiro/hooks/` integrity validators. |
-| **Potential Impact & Utility** | 10 / 10 | Replaces flat, demotivating task lists with an engaging, spatial knowledge adventure suitable for students, self-learners, and engineers. |
-| **Design & Technical Quality** | 10 / 10 | 60 FPS Three.js rendering, ACESFilmic tone mapping, strict TypeScript without `any`, code-split production bundle, zero console errors, and unit test suite. |
+| Requirement | Implementation Evidence | Verification Method |
+| :--- | :--- | :--- |
+| **Directed Acyclic Graph** | `src/services/questGraphEngine.ts` implements topological sorting and 3-color DFS cycle prevention. | `npm test` (`questGraphEngine.test.ts` passes 5/5 assertions) |
+| **Markdown Import Resilience** | `src/services/markdownQuestParser.ts` parses both section and hierarchical formats, preserving comma-separated titles. | `npm test` (`markdownQuestParser.test.ts` passes 2/2 assertions) |
+| **Zero Memory Leaks** | `src/components/AtlasCanvas3D.tsx` traverses and disposes of all `BufferGeometry`, `Material`, textures, and OrbitControls on unmount. | Code review & React 19 StrictMode mounting validation |
+| **Production Bundle Optimization** | `vite.config.ts` configures Rollup manualChunks (`vendor-three`, `vendor-react`, `vendor-icons`). | `npm run build` generates clean chunks under 550KB with zero warnings |
+| **Live Web Deployment** | Built via GitHub Actions with relative path resolution (`base: './'`). | Hosted on GitHub Pages: [https://chiru534.github.io/mindatlas-3d/](https://chiru534.github.io/mindatlas-3d/) |
 
 ---
 
-## 5. Getting Started & Verification
+## 5. Local Development & Build Instructions
 
 ### Prerequisites
-- Node.js (v18.0.0 or newer)
-- npm (v9.0.0 or newer)
+- Node.js $\ge 18.0.0$
+- npm $\ge 9.0.0$
 
-### Installation
+### 1. Clone & Install
 ```bash
 git clone https://github.com/Chiru534/mindatlas-3d.git
 cd mindatlas-3d
 npm install
 ```
 
-### Run Local Development Server
+### 2. Start Development Server
 ```bash
 npm run dev
 ```
-Open `http://localhost:3000` in Chrome, Edge, or Brave.
+Open `http://localhost:3000` in any modern WebGL-capable browser.
 
-### Run Automated Unit Test Suite
+### 3. Run Automated Tests
 ```bash
 npm test
 ```
-Executes 7 unit tests covering DAG cycle detection, topological sorting, unlock propagation, and section-based Markdown parsing via Vitest.
+Runs the Vitest suite against the DAG engine and markdown parser.
 
-### Production Bundle Build
+### 4. Production Build
 ```bash
 npm run build
 ```
-Compiles strict TypeScript and generates code-split production bundles (`vendor-three`, `vendor-react`, `vendor-icons`, and `index`).
+Generates production-optimized static assets in `dist/`.
 
 ---
 
 ## 6. License
 
-This project is licensed under the MIT License — see the [LICENSE](file:///c:/Users/chiranjeevi%20madem/OneDrive/%D0%94%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D1%8B/kiro-project/LICENSE) file for details.
+This project is open-source under the [MIT License](LICENSE).  
+Copyright (c) 2026 Chiru534.

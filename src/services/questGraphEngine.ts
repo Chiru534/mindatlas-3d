@@ -793,16 +793,69 @@ export function loadWorldStateFromStorage(): AtlasWorldState | null {
       typeof parsed === 'object' &&
       parsed !== null &&
       Array.isArray(parsed.nodes) &&
-      Array.isArray(parsed.edges) &&
-      typeof parsed.playerLevel === 'number' &&
-      typeof parsed.totalXp === 'number'
+      Array.isArray(parsed.edges)
     ) {
-      return parsed as AtlasWorldState;
+      // Recalculate level and XP directly from completed nodes (never trust stale/corrupt client values)
+      const completedXp = parsed.nodes
+        .filter((n) => n.status === 'COMPLETED')
+        .reduce((sum, n) => sum + (n.xpReward || 0), 0);
+      const recalculatedLevel = 1 + Math.floor(completedXp / 250);
+
+      return {
+        playerLevel: recalculatedLevel,
+        totalXp: completedXp,
+        nodes: parsed.nodes,
+        edges: parsed.edges,
+        selectedNodeId: parsed.selectedNodeId || null,
+        audioMuted: !!parsed.audioMuted,
+      };
     }
   } catch (err) {
     console.warn('[questGraphEngine] Corrupted state in localStorage, resetting:', err);
   }
   return null;
+}
+
+/**
+ * Toggles a sub-task on a specific landmark and returns the updated state.
+ */
+export function toggleNodeSubTask(state: AtlasWorldState, nodeId: string, subTaskId: string): AtlasWorldState {
+  const updatedNodes = state.nodes.map((node) => {
+    if (node.id !== nodeId) return node;
+    const currentSubTasks = node.subTasks && node.subTasks.length > 0 ? node.subTasks : [
+      { id: 'sub-1', title: `Review foundational concepts for ${node.title}`, completed: node.status === 'COMPLETED' },
+      { id: 'sub-2', title: `Complete hands-on exercise / lab session`, completed: node.status === 'COMPLETED' },
+      { id: 'sub-3', title: `Verify implementation & clear dependencies`, completed: node.status === 'COMPLETED' },
+    ];
+    const toggled = currentSubTasks.map((st) => (st.id === subTaskId ? { ...st, completed: !st.completed } : st));
+    return {
+      ...node,
+      subTasks: toggled,
+    };
+  });
+
+  return {
+    ...state,
+    nodes: updatedNodes,
+  };
+}
+
+/**
+ * Updates study notes on a specific landmark and returns the updated state.
+ */
+export function updateNodeNotes(state: AtlasWorldState, nodeId: string, newNotes: string): AtlasWorldState {
+  const updatedNodes = state.nodes.map((node) => {
+    if (node.id !== nodeId) return node;
+    return {
+      ...node,
+      notes: newNotes,
+    };
+  });
+
+  return {
+    ...state,
+    nodes: updatedNodes,
+  };
 }
 
 /**
