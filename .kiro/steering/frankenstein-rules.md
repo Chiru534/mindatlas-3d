@@ -1,13 +1,13 @@
-# MindAtlas 3D — Kiro Steering Rules (Frankenstein Category)
+# DeadCode Necromancer — Kiro Steering Rules (Resurrection & Frankenstein Track)
 
 ## Project Identity
-MindAtlas 3D stitches together three distinct technologies into one seamless web application:
-1. **3D Spatial Cartography (Three.js):** An interactive Google Maps / city-builder style 3D terrain of study topics, notes, and tasks.
-2. **Gamified Knowledge & Quest Engine (React + TypeScript):** Tasks act as unlockable map landmarks with XP, fog-of-war progression, and dependency roads.
-3. **Procedural Soundscape & Feedback (Web Audio API):** Real-time synthesized chimes, ambient region hums, and unlock fanfare without external MP3 assets.
+DeadCode Necromancer is an ultra-crisp 2D static-analysis and surgical code resurrection studio built for the Kiroween Hackathon:
+1. **Static Curse Scanner (TypeScript AST/Pattern Engine):** Diagnoses security vulnerabilities (`eval`, SQL injection, XSS), concurrency anti-patterns (callback hell, unhandled promises), and dead/deprecated code.
+2. **Interactive 2D SVG Autopsy Topology:** Visualizes function call flows, tainted data sinks, and curse hotspots in a sharp 2D SVG diagram with zero 3D bloat.
+3. **Surgical Resurrection Engine & Diff Viewer:** Transforms decaying legacy code into strict, modern TypeScript/async-await with line-by-line diff verification.
+4. **Procedural Web Audio Telemetry:** Subtle, zero-asset `AudioContext` sound cues for scan ticks, curse alerts, and resurrection completion.
 
 ## Mandatory Coding Standards
-- **Strict TypeScript:** Never use `any`. Define all 3D coordinates, quest nodes, edges, and audio presets in `src/types/atlas.ts`.
-- **Three.js Resource Hygiene:** Every `BufferGeometry`, `Material`, and `WebGLRenderer` created in React components must be disposed of inside `useEffect` cleanup functions.
-- **Zero External Audio Assets:** All sound effects (node click, task complete, region unlock) must be synthesized programmatically via the browser `AudioContext`.
-- **Spec-First Execution:** Always verify new features against `.kiro/specs/mind-atlas-3d/requirements.md` before modifying UI components.
+- **Strict TypeScript:** Zero `any` types. All curse definitions, autopsy reports, graph nodes, and patches live in `src/types/necromancer.ts`.
+- **Zero 3D / Three.js Bloat:** All visualizations must use crisp 2D React + Tailwind + SVG.
+- **Deterministic & Verifiable:** Every surgical patch must be covered by Vitest unit tests.

@@ -1,0 +1,13 @@
+{
+  "name": "resurrection-validator",
+  "version": "1.0.0",
+  "description": "Validates resurrected code against Kiroween security and modernization policies",
+  "trigger": "on_resurrect",
+  "policies": [
+    "zero-eval-policy",
+    "sql-parameterization",
+    "xss-sink-shield",
+    "strict-equality-guard",
+    "modern-async-flow"
+  ]
+}

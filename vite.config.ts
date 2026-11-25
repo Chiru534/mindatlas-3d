@@ -14,7 +14,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-three': ['three'],
           'vendor-react': ['react', 'react-dom'],
           'vendor-icons': ['lucide-react', 'canvas-confetti'],
         },
