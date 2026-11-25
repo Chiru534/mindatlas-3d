@@ -7,19 +7,24 @@ import {
   CheckCircle2,
   XCircle,
   FileCheck2,
+  TrendingUp,
 } from 'lucide-react';
 import { AutopsyReport, Curse } from '../types/necromancer';
 
 interface CurseInspectorPanelProps {
   report: AutopsyReport;
+  beforeVitality: number | null;
   appliedFixes: string[];
+  resurrectionMode: 'local-ast' | 'ai-assisted' | null;
   onSelectCurse: (line: number) => void;
   onExorciseSingle: (ruleId: string) => void;
 }
 
 export const CurseInspectorPanel: React.FC<CurseInspectorPanelProps> = ({
   report,
+  beforeVitality,
   appliedFixes,
+  resurrectionMode,
   onSelectCurse,
   onExorciseSingle,
 }) => {
@@ -55,10 +60,29 @@ export const CurseInspectorPanel: React.FC<CurseInspectorPanelProps> = ({
           </div>
         </div>
         <div className="p-2.5 text-center">
-          <div className="text-[10px] font-mono text-slate-400 uppercase">Lines</div>
-          <div className="text-sm font-bold font-mono text-cyan-400">{report.lineCount}</div>
+          <div className="text-[10px] font-mono text-slate-400 uppercase">TS Errors</div>
+          <div
+            className={`text-sm font-bold font-mono ${
+              report.diagnostics.length === 0 ? 'text-emerald-400' : 'text-rose-400'
+            }`}
+          >
+            {report.diagnostics.length}
+          </div>
         </div>
       </div>
+
+      {/* Before -> After Vitality Delta Banner */}
+      {beforeVitality !== null && beforeVitality < report.vitalityScore && (
+        <div className="px-3 py-2 bg-emerald-500/10 border-b border-emerald-500/25 flex items-center justify-between text-xs font-mono">
+          <span className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+            <TrendingUp className="w-3.5 h-3.5" />
+            Vitality Delta ({resurrectionMode === 'ai-assisted' ? 'AI' : 'AST'})
+          </span>
+          <span className="text-white font-bold">
+            {beforeVitality}% &rarr; <span className="text-emerald-400">{report.vitalityScore}%</span>
+          </span>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-800/90 bg-[#0b0f17] p-1 gap-1">
@@ -99,7 +123,7 @@ export const CurseInspectorPanel: React.FC<CurseInspectorPanelProps> = ({
               <div>
                 <h3 className="text-sm font-bold text-white">Vessel Purified (100% Vitality)</h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Zero security, concurrency, or legacy curses remain in this module.
+                  Zero security, concurrency, or legacy AST curses remain in this module.
                 </p>
               </div>
               {appliedFixes.length > 0 && (
@@ -164,7 +188,7 @@ export const CurseInspectorPanel: React.FC<CurseInspectorPanelProps> = ({
             <div className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800 flex items-center gap-2 text-[11px] text-slate-300">
               <Activity className="w-4 h-4 text-violet-400 shrink-0" />
               <span>
-                Live validation against{' '}
+                Live AST validation against{' '}
                 <code className="text-violet-300 font-mono">
                   .kiro/hooks/resurrection-validator.json
                 </code>

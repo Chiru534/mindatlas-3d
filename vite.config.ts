@@ -10,12 +10,13 @@ export default defineConfig({
     open: false,
   },
   build: {
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 3500,
     rollupOptions: {
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
           'vendor-icons': ['lucide-react', 'canvas-confetti'],
+          'vendor-ts': ['typescript'],
         },
       },
     },

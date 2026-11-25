@@ -9,12 +9,19 @@
 
 ## Overview
 
-**DeadCode Necromancer** is an ultra-crisp 2D legacy codebase autopsy and surgical resurrection studio built for the **Kiroween Hackathon**. Instead of letting decaying, bug-ridden legacy code rot in production, developers paste or load haunted codebases to:
+**DeadCode Necromancer** is a browser-native **TypeScript AST Autopsy & Surgical Resurrection Studio** built for the **Kiroween Hackathon**. Instead of fragile regexes, it runs the **Microsoft TypeScript Compiler AST (`typescript`)** directly in the browser to diagnose legacy codebases, visualize call/taint topologies, apply offset-exact surgical codemods, and verify zero compiler syntax errors.
 
-1. **Run Static Curse Autopsy (`src/services/curseAnalyzer.ts`):** Line-by-line detection of critical security vulnerabilities (`eval()` RCE, SQL string concatenation, hardcoded secrets, DOM XSS sinks), async anti-patterns (callback hell, unhandled promises), and legacy APIs, producing a live **Vitality Score (0–100%)** and **Cyclomatic Complexity**.
-2. **Explore 2D SVG Taint & Call Topology (`src/components/AutopsyGraph2D.tsx`):** Crisp interactive 2D SVG graph mapping module entry points, functions, and cursed sinks with clickable jump-to-line navigation.
-3. **Cast Surgical Resurrection (`src/services/resurrectionEngine.ts`):** Deterministic patching (`var` → `const`, `==` → `===`, parameterized SQL queries, `innerHTML` → `textContent`, `eval()` → `JSON.parse()`) with a line-by-line **Surgical Diff Viewer**.
-4. **Verify Kiro Policy Hooks (`.kiro/`):** Real-time validation against `.kiro/hooks/resurrection-validator.json` (`zero-eval-policy`, `sql-parameterization`, `xss-sink-shield`, `strict-equality-guard`, `modern-async-flow`).
+### Five Stitched Capabilities (Frankenstein + Resurrection)
+1. **In-Browser TypeScript AST & Compiler Diagnostics (`src/services/curseAnalyzer.ts`):**
+   - Uses `ts.createSourceFile` and `ts.transpileModule(..., { reportDiagnostics: true })` in the browser to detect real syntactic errors and AST-verified curses (`eval`/`new Function` RCE, SQL binary concatenation, hardcoded credentials, `.innerHTML` / `dangerouslySetInnerHTML` XSS, reassigned vs. immutable `var` hoisting, loose `==`/`!=`, legacy React `UNSAFE_` lifecycles, error-first callback pyramids, unhandled `.then()` chains, and zombie comments).
+2. **AST-Offset Surgical Codemod & Patch Exporter (`src/services/resurrectionEngine.ts`):**
+   - Performs non-overlapping right-to-left AST offset edits: chooses `let` vs `const` from real mutation tracking, parameterizes SQL strings *and* wires parameter arrays into `db.query`/`db.execute` call sites, generates side-by-side Split Diffs, Unified Diffs, and exports git-ready `.patch` or `.ts` files.
+3. **Real-World File Upload, Drag-and-Drop & GitHub Import (`src/components/TopBar.tsx`, `CodeAutopsyEditor.tsx`):**
+   - Drop any `.js`/`.ts`/`.jsx`/`.tsx` file or paste any public GitHub blob/Raw Gist URL to run an instant autopsy.
+4. **Interactive 2D SVG Taint & Call Topology (`src/components/AutopsyGraph2D.tsx`):**
+   - Extracts functions, classes, and cursed sinks from the AST into a clickable 2D SVG Bezier diagram.
+5. **Optional BYOK AI Necromancy + Kiro Hooks (`src/services/aiNecromancer.ts`, `.kiro/hooks/resurrection-validator.json`):**
+   - Works 100% offline with the zero-config Local AST Engine, or accepts an optional Gemini / OpenAI key in session memory for full structural async/await rewrites—automatically verified by our local AST & `tsc` diagnostics.
 
 ---
 

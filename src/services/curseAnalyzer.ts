@@ -1,5 +1,7 @@
+import * as ts from 'typescript';
 import {
   AutopsyReport,
+  CompilerDiagnostic,
   Curse,
   CurseSeverity,
   GraphEdge2D,
@@ -7,128 +9,587 @@ import {
   PolicyCheck,
 } from '../types/necromancer';
 
-interface RuleDefinition {
-  ruleId: string;
-  title: string;
-  description: string;
-  severity: CurseSeverity;
-  category: Curse['category'];
-  pattern: RegExp;
-  fixSummary: string;
+export interface AstCurseHit {
+  curse: Curse;
+  start: number;
+  end: number;
+  meta?: Record<string, string>;
 }
 
-const CURSE_RULES: RuleDefinition[] = [
-  {
-    ruleId: 'no-eval-injection',
-    title: 'Arbitrary Code Execution (eval / Function)',
-    description:
-      'Dynamic eval() executes untrusted strings in local scope, enabling full remote code execution and breaking JIT optimization.',
-    severity: 'CRITICAL',
-    category: 'SECURITY',
-    pattern: /\beval\s*\(|new\s+Function\s*\(/,
-    fixSummary: 'Replace eval() with safe JSON.parse() inside a guarded try/catch block.',
-  },
-  {
-    ruleId: 'sql-string-concat',
-    title: 'SQL Injection via String Concatenation',
-    description:
-      'Interpolating or concatenating user input directly into SQL statements allows attackers to hijack database queries.',
-    severity: 'CRITICAL',
-    category: 'SECURITY',
-    pattern: /(?:"(?:SELECT|INSERT|UPDATE|DELETE)\b[^"]*"|'(?:SELECT|INSERT|UPDATE|DELETE)\b[^']*'|`(?:SELECT|INSERT|UPDATE|DELETE)\b[^`]*`)\s*\+/i,
-    fixSummary: 'Convert to parameterized prepared statement ($1 placeholder + bound array).',
-  },
-  {
-    ruleId: 'hardcoded-secret',
-    title: 'Hardcoded Secret / API Credential',
-    description:
-      'API keys or tokens committed in source code leak immediately through version control and client bundles.',
-    severity: 'CRITICAL',
-    category: 'SECURITY',
-    pattern: /(?:API_SECRET|STRIPE_KEY|SECRET_KEY|PASSWORD|TOKEN)\s*=\s*["'][^"']{6,}["']/i,
-    fixSummary: 'Read credential from process.env with runtime assertion.',
-  },
-  {
-    ruleId: 'dom-xss-sink',
-    title: 'DOM XSS Sink (innerHTML / dangerouslySetInnerHTML)',
-    description:
-      'Writing unescaped strings to innerHTML or dangerouslySetInnerHTML allows arbitrary script injection.',
-    severity: 'HIGH',
-    category: 'SECURITY',
-    pattern: /\.innerHTML\s*=|dangerouslySetInnerHTML/,
-    fixSummary: 'Use textContent or sanitized JSX interpolation instead of raw HTML injection.',
-  },
-  {
-    ruleId: 'callback-pyramid',
-    title: 'Nested Callback Hell',
-    description:
-      'Deeply nested anonymous callbacks obscure error propagation and create fragile control flow.',
-    severity: 'HIGH',
-    category: 'ASYNC',
-    pattern: /function\s*\(\s*(?:err|saveErr|e)\b/,
-    fixSummary: 'Refactor callback chain into linear async/await with structured try/catch.',
-  },
-  {
-    ruleId: 'unhandled-promise',
-    title: 'Unhandled Promise Chain (.then without .catch)',
-    description:
-      'Promise chains without rejection handlers cause silent failures or process crashes in modern runtimes.',
-    severity: 'MEDIUM',
-    category: 'ASYNC',
-    pattern: /\.then\s*\(/,
-    fixSummary: 'Convert .then() chain to async/await wrapped in error handling.',
-  },
-  {
-    ruleId: 'unsafe-react-lifecycle',
-    title: 'Deprecated React Lifecycle (UNSAFE_ / componentWillMount)',
-    description:
-      'Legacy React lifecycle methods are incompatible with Concurrent Rendering and often leak timers.',
-    severity: 'HIGH',
-    category: 'LEGACY_API',
-    pattern: /\b(?:UNSAFE_componentWillMount|componentWillMount|componentWillReceiveProps)\b/,
-    fixSummary: 'Migrate to functional component with useEffect() and cleanup return.',
-  },
-  {
-    ruleId: 'var-hoisting-leak',
-    title: 'Function-Scoped var Hoisting Leak',
-    description:
-      'Using var leaks variables across block boundaries and enables accidental redeclaration bugs.',
-    severity: 'MEDIUM',
-    category: 'TYPE_SAFETY',
-    pattern: /^\s*var\s+[a-zA-Z_$][\w$]*/,
-    fixSummary: 'Replace var with block-scoped const or let.',
-  },
-  {
-    ruleId: 'loose-equality',
-    title: 'Loose Equality Coercion (== / !=)',
-    description:
-      'Abstract equality performs implicit type coercion, causing subtle truthiness bugs.',
-    severity: 'MEDIUM',
-    category: 'TYPE_SAFETY',
-    pattern: /[^=!<>]==[^=]|[^!]!=[^=]/,
-    fixSummary: 'Enforce strict equality (=== / !==).',
-  },
-  {
-    ruleId: 'console-ghost',
-    title: 'Production Console Ghost',
-    description:
-      'Stray console.log statements leak internal payloads and clutter production telemetry.',
-    severity: 'LOW',
-    category: 'DEAD_CODE',
-    pattern: /\bconsole\.log\s*\(/,
-    fixSummary: 'Remove stray debug log or route to structured logger.',
-  },
-  {
-    ruleId: 'zombie-commented-code',
-    title: 'Zombie Commented-Out Code Block',
-    description:
-      'Dead commented-out functions rot over time and confuse maintainers during incidents.',
-    severity: 'LOW',
-    category: 'DEAD_CODE',
-    pattern: /^\s*\/\/\s*(?:function|var|const|let|eval\(|TODO:)/,
-    fixSummary: 'Purge dead commented code (rely on git history).',
-  },
-];
+export interface AstInspectionResult {
+  sourceFile: ts.SourceFile;
+  hits: AstCurseHit[];
+  reassignedVars: Set<string>;
+  diagnostics: CompilerDiagnostic[];
+  cyclomaticComplexity: number;
+  functions: { id: string; label: string; line: number; endLine: number }[];
+}
+
+const SECRET_NAME_RE = /(?:API_SECRET|STRIPE_KEY|SECRET_KEY|PASSWORD|AUTH_TOKEN|API_KEY|PRIVATE_KEY)/i;
+const SQL_PREFIX_RE = /^(?:SELECT|INSERT|UPDATE|DELETE)\b/i;
+
+function getLine(sf: ts.SourceFile, pos: number): number {
+  return sf.getLineAndCharacterOfPosition(Math.max(0, pos)).line + 1;
+}
+
+function getLineSnippet(sf: ts.SourceFile, pos: number): string {
+  const lines = sf.text.split(/\r?\n/);
+  const idx = getLine(sf, pos) - 1;
+  return (lines[idx] ?? '').trim();
+}
+
+function extractSqlBaseAndParam(expr: ts.BinaryExpression, sf: ts.SourceFile): { baseSql: string; paramExpr: string } | null {
+  const parts: ts.Expression[] = [];
+  const collect = (node: ts.Expression) => {
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      collect(node.left);
+      collect(node.right);
+    } else {
+      parts.push(node);
+    }
+  };
+  collect(expr);
+
+  if (parts.length < 2) return null;
+  const first = parts[0];
+  if (!ts.isStringLiteralLike(first)) return null;
+  if (!SQL_PREFIX_RE.test(first.text.trim())) return null;
+
+  const nonLiteral = parts.find((p) => !ts.isStringLiteralLike(p));
+  if (!nonLiteral) return null;
+
+  const cleanedBase = first.text.replace(/'\s*$/, '').trim();
+  return {
+    baseSql: cleanedBase,
+    paramExpr: nonLiteral.getText(sf),
+  };
+}
+
+/**
+ * Parses source code with the Microsoft TypeScript compiler AST & runs syntactic diagnostics.
+ */
+export function inspectAst(sourceCode: string): AstInspectionResult {
+  const sourceFile = ts.createSourceFile(
+    'specimen.tsx',
+    sourceCode,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+
+  // Real TypeScript syntactic transpile diagnostics
+  const transpileRes = ts.transpileModule(sourceCode, {
+    fileName: 'specimen.tsx',
+    reportDiagnostics: true,
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      jsx: ts.JsxEmit.ReactJSX,
+      allowJs: true,
+    },
+  });
+
+  const diagnostics: CompilerDiagnostic[] = (transpileRes.diagnostics || []).map((d) => ({
+    line: d.start !== undefined ? getLine(sourceFile, d.start) : 1,
+    code: d.code,
+    message: ts.flattenDiagnosticMessageText(d.messageText, ' '),
+    category: d.category === ts.DiagnosticCategory.Error ? 'error' : 'warning',
+  }));
+
+  const reassignedVars = new Set<string>();
+  const hits: AstCurseHit[] = [];
+  const functions: { id: string; label: string; line: number; endLine: number }[] = [];
+  let cyclomaticComplexity = 1;
+
+  // Pass 1: Collect variable reassignments & cyclomatic complexity & function definitions
+  const scanPass1 = (node: ts.Node) => {
+    if (
+      ts.isIfStatement(node) ||
+      ts.isForStatement(node) ||
+      ts.isForInStatement(node) ||
+      ts.isForOfStatement(node) ||
+      ts.isWhileStatement(node) ||
+      ts.isDoStatement(node) ||
+      ts.isCaseClause(node) ||
+      ts.isConditionalExpression(node) ||
+      ts.isCatchClause(node)
+    ) {
+      cyclomaticComplexity += 1;
+    } else if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        node.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+        node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
+    ) {
+      cyclomaticComplexity += 1;
+    }
+
+    // Track reassignments for smart var -> const vs let
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    ) {
+      if (ts.isIdentifier(node.left)) {
+        reassignedVars.add(node.left.text);
+      }
+    } else if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+      (node.operator === ts.SyntaxKind.PlusPlusToken ||
+        node.operator === ts.SyntaxKind.MinusMinusToken) &&
+      ts.isIdentifier(node.operand)
+    ) {
+      reassignedVars.add(node.operand.text);
+    }
+
+    // Collect named functions, classes, and methods for 2D SVG topology
+    if (ts.isFunctionDeclaration(node) && node.name) {
+      const line = getLine(sourceFile, node.getStart(sourceFile));
+      const endLine = getLine(sourceFile, node.getEnd());
+      functions.push({
+        id: `fn-${node.name.text}-${line}`,
+        label: `${node.name.text}()`,
+        line,
+        endLine,
+      });
+    } else if (ts.isClassDeclaration(node) && node.name) {
+      const line = getLine(sourceFile, node.getStart(sourceFile));
+      const endLine = getLine(sourceFile, node.getEnd());
+      functions.push({
+        id: `class-${node.name.text}-${line}`,
+        label: `class ${node.name.text}`,
+        line,
+        endLine,
+      });
+    } else if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
+      const line = getLine(sourceFile, node.getStart(sourceFile));
+      const endLine = getLine(sourceFile, node.getEnd());
+      functions.push({
+        id: `method-${node.name.text}-${line}`,
+        label: `.${node.name.text}()`,
+        line,
+        endLine,
+      });
+    }
+
+    ts.forEachChild(node, scanPass1);
+  };
+  scanPass1(sourceFile);
+
+  // Track seen comment positions so we don't duplicate comment curses
+  const seenCommentPos = new Set<number>();
+
+  const checkComments = (pos: number) => {
+    const leading = ts.getLeadingCommentRanges(sourceCode, pos) || [];
+    for (const c of leading) {
+      if (seenCommentPos.has(c.pos)) continue;
+      seenCommentPos.add(c.pos);
+      const commentText = sourceCode.slice(c.pos, c.end);
+      if (/\/\/\s*(?:function|var|const|let|eval\(|TODO:|}|\/\/)/.test(commentText)) {
+        const line = getLine(sourceFile, c.pos);
+        hits.push({
+          curse: {
+            id: `zombie-commented-code-L${line}-${c.pos}`,
+            ruleId: 'zombie-commented-code',
+            title: 'Zombie Commented-Out Code',
+            description:
+              'Dead commented-out code and stale TODOs rot over time and obscure incident root causes.',
+            severity: 'LOW',
+            category: 'DEAD_CODE',
+            line,
+            snippet: commentText.trim(),
+            fixSummary: 'Purge dead commented block (preserved in git history).',
+          },
+          start: c.pos,
+          end: c.end,
+        });
+      }
+    }
+  };
+
+  // Pass 2: AST Curse Detection
+  const scanPass2 = (node: ts.Node) => {
+    checkComments(node.getFullStart());
+
+    // 1. var declarations
+    if (
+      ts.isVariableDeclarationList(node) &&
+      (node.flags & ts.NodeFlags.Let) === 0 &&
+      (node.flags & ts.NodeFlags.Const) === 0
+    ) {
+      const start = node.getStart(sourceFile);
+      const line = getLine(sourceFile, start);
+      const names = node.declarations
+        .map((d) => (ts.isIdentifier(d.name) ? d.name.text : ''))
+        .filter(Boolean);
+      const isReassigned = names.some((n) => reassignedVars.has(n));
+      const keyword = isReassigned ? 'let' : 'const';
+
+      hits.push({
+        curse: {
+          id: `var-hoisting-leak-L${line}-${start}`,
+          ruleId: 'var-hoisting-leak',
+          title: 'Function-Scoped var Hoisting Leak',
+          description:
+            'var ignores block scope and hoists to the nearest function boundary, enabling subtle mutation bugs.',
+          severity: 'MEDIUM',
+          category: 'TYPE_SAFETY',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: `Upgrade var declaration to block-scoped ${keyword}.`,
+        },
+        start,
+        end: start + 3, // exact 'var' keyword span
+        meta: { targetKeyword: keyword },
+      });
+    }
+
+    // 2. Hardcoded secrets in VariableDeclaration
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      SECRET_NAME_RE.test(node.name.text) &&
+      node.initializer &&
+      ts.isStringLiteralLike(node.initializer) &&
+      node.initializer.text.length >= 6
+    ) {
+      const start = node.initializer.getStart(sourceFile);
+      const end = node.initializer.getEnd();
+      const line = getLine(sourceFile, start);
+      hits.push({
+        curse: {
+          id: `hardcoded-secret-L${line}-${start}`,
+          ruleId: 'hardcoded-secret',
+          title: 'Hardcoded Secret / API Credential',
+          description:
+            'Static credentials embedded in source code expose production infrastructure via git history and bundles.',
+          severity: 'CRITICAL',
+          category: 'SECURITY',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: `Load ${node.name.text} from process.env.${node.name.text}.`,
+        },
+        start,
+        end,
+        meta: { varName: node.name.text },
+      });
+    }
+
+    // 3. eval(...) or new Function(...)
+    if (
+      (ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'eval') ||
+      (ts.isNewExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'Function')
+    ) {
+      const start = node.getStart(sourceFile);
+      const end = node.getEnd();
+      const line = getLine(sourceFile, start);
+      const argText = node.arguments?.[0]?.getText(sourceFile) ?? '""';
+      hits.push({
+        curse: {
+          id: `no-eval-injection-L${line}-${start}`,
+          ruleId: 'no-eval-injection',
+          title: 'Arbitrary Code Execution (eval / Function)',
+          description:
+            'eval() compiles and runs untrusted strings in local lexical scope, creating an immediate RCE backdoor.',
+          severity: 'CRITICAL',
+          category: 'SECURITY',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: 'Replace eval() with safe JSON.parse().',
+        },
+        start,
+        end,
+        meta: { argText },
+      });
+    }
+
+    // 4. SQL String Concatenation inside BinaryExpression
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.PlusToken &&
+      !(
+        ts.isBinaryExpression(node.parent) &&
+        node.parent.operatorToken.kind === ts.SyntaxKind.PlusToken
+      )
+    ) {
+      const sqlInfo = extractSqlBaseAndParam(node, sourceFile);
+      if (sqlInfo) {
+        const start = node.getStart(sourceFile);
+        const end = node.getEnd();
+        const line = getLine(sourceFile, start);
+
+        // Identify variable name if assigned like `var query = ...`
+        let sqlVarName = '';
+        if (ts.isVariableDeclaration(node.parent) && ts.isIdentifier(node.parent.name)) {
+          sqlVarName = node.parent.name.text;
+        }
+
+        hits.push({
+          curse: {
+            id: `sql-string-concat-L${line}-${start}`,
+            ruleId: 'sql-string-concat',
+            title: 'SQL Injection via String Concatenation',
+            description:
+              'Concatenating dynamic variables directly into SQL text enables attackers to bypass authentication or dump tables.',
+            severity: 'CRITICAL',
+            category: 'SECURITY',
+            line,
+            snippet: getLineSnippet(sourceFile, start),
+            fixSummary: `Parameterize SQL ($1) and bind [${sqlInfo.paramExpr}] at db call site.`,
+          },
+          start,
+          end,
+          meta: {
+            baseSql: sqlInfo.baseSql,
+            paramExpr: sqlInfo.paramExpr,
+            sqlVarName,
+          },
+        });
+      }
+    }
+
+    // 5. DOM XSS sink: .innerHTML = ...
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isPropertyAccessExpression(node.left) &&
+      node.left.name.text === 'innerHTML'
+    ) {
+      const start = node.left.name.getStart(sourceFile);
+      const end = node.left.name.getEnd();
+      const line = getLine(sourceFile, start);
+      hits.push({
+        curse: {
+          id: `dom-xss-sink-L${line}-${start}`,
+          ruleId: 'dom-xss-sink',
+          title: 'DOM XSS Sink (.innerHTML)',
+          description:
+            'Assigning unescaped markup to .innerHTML executes injected event handlers and script payloads.',
+          severity: 'HIGH',
+          category: 'SECURITY',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: 'Replace .innerHTML with .textContent to safely escape text.',
+        },
+        start,
+        end,
+        meta: { xssKind: 'innerHTML' },
+      });
+    }
+
+    // 6. JSX dangerouslySetInnerHTML
+    if (
+      ts.isJsxSelfClosingElement(node) &&
+      node.attributes.properties.some(
+        (p) =>
+          ts.isJsxAttribute(p) &&
+          ts.isIdentifier(p.name) &&
+          p.name.text === 'dangerouslySetInnerHTML'
+      )
+    ) {
+      const attr = node.attributes.properties.find(
+        (p): p is ts.JsxAttribute =>
+          ts.isJsxAttribute(p) &&
+          ts.isIdentifier(p.name) &&
+          p.name.text === 'dangerouslySetInnerHTML'
+      );
+      if (attr) {
+        const start = node.getStart(sourceFile);
+        const end = node.getEnd();
+        const line = getLine(sourceFile, start);
+        const rawText = attr.initializer?.getText(sourceFile) ?? '';
+        const innerMatch = rawText.match(/__html:\s*([^}\s]+)/);
+        const expr = innerMatch ? innerMatch[1] : '""';
+        hits.push({
+          curse: {
+            id: `dom-xss-sink-L${line}-${start}`,
+            ruleId: 'dom-xss-sink',
+            title: 'React XSS Sink (dangerouslySetInnerHTML)',
+            description:
+              'Bypassing React automatic escaping via dangerouslySetInnerHTML exposes components to stored XSS.',
+            severity: 'HIGH',
+            category: 'SECURITY',
+            line,
+            snippet: getLineSnippet(sourceFile, start),
+            fixSummary: 'Render escaped JSX text {String(...)} instead of raw HTML.',
+          },
+          start,
+          end,
+          meta: { xssKind: 'jsx', tagName: node.tagName.getText(sourceFile), expr },
+        });
+      }
+    }
+
+    // 7. Loose equality (== / !=)
+    if (
+      ts.isBinaryExpression(node) &&
+      (node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+        node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken)
+    ) {
+      const start = node.operatorToken.getStart(sourceFile);
+      const end = node.operatorToken.getEnd();
+      const line = getLine(sourceFile, start);
+      const replacement =
+        node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ? '===' : '!==';
+      hits.push({
+        curse: {
+          id: `loose-equality-L${line}-${start}`,
+          ruleId: 'loose-equality',
+          title: 'Loose Equality Coercion (== / !=)',
+          description:
+            'Abstract equality triggers implicit JS type coercion (e.g. "" == 0), causing logic bypasses.',
+          severity: 'MEDIUM',
+          category: 'TYPE_SAFETY',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: `Enforce strict operator (${replacement}).`,
+        },
+        start,
+        end,
+        meta: { replacement },
+      });
+    }
+
+    // 8. Deprecated React lifecycle methods
+    if (
+      ts.isMethodDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      /^(?:UNSAFE_componentWillMount|componentWillMount|UNSAFE_componentWillReceiveProps|componentWillReceiveProps)$/.test(
+        node.name.text
+      )
+    ) {
+      const start = node.name.getStart(sourceFile);
+      const end = node.name.getEnd();
+      const line = getLine(sourceFile, start);
+      hits.push({
+        curse: {
+          id: `unsafe-react-lifecycle-L${line}-${start}`,
+          ruleId: 'unsafe-react-lifecycle',
+          title: `Deprecated React Lifecycle (${node.name.text})`,
+          description:
+            'Legacy pre-commit lifecycle hooks fail under React Concurrent Mode and commonly leak intervals/subscriptions.',
+          severity: 'HIGH',
+          category: 'LEGACY_API',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: 'Migrate to componentDidMount() or functional useEffect().',
+        },
+        start,
+        end,
+      });
+    }
+
+    // 9. Error-first callback pyramid
+    if (
+      ts.isFunctionExpression(node) &&
+      ts.isCallExpression(node.parent) &&
+      node.parameters.length > 0 &&
+      ts.isIdentifier(node.parameters[0].name) &&
+      /^(?:err|error|saveErr|e)$/i.test(node.parameters[0].name.text)
+    ) {
+      const start = node.getStart(sourceFile);
+      const line = getLine(sourceFile, start);
+      hits.push({
+        curse: {
+          id: `callback-pyramid-L${line}-${start}`,
+          ruleId: 'callback-pyramid',
+          title: 'Legacy Error-First Callback Pyramid',
+          description:
+            'Nested error-first callbacks fragment exception handling and create brittle pyramidal control flow.',
+          severity: 'HIGH',
+          category: 'ASYNC',
+          line,
+          snippet: getLineSnippet(sourceFile, start),
+          fixSummary: 'Convert legacy function(err, ...) callback to modern arrow / async flow.',
+        },
+        start,
+        end: node.body.getStart(sourceFile),
+      });
+    }
+
+    // 10. Unhandled Promise .then() without .catch()
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'then'
+    ) {
+      // Check if an outer PropertyAccessExpression calls .catch
+      const parentProp = node.parent;
+      const hasChainedCatch =
+        ts.isPropertyAccessExpression(parentProp) && parentProp.name.text === 'catch';
+      if (!hasChainedCatch && !/\.catch\s*\(/.test(sourceCode)) {
+        const start = node.getStart(sourceFile);
+        const end = node.getEnd();
+        const line = getLine(sourceFile, start);
+        hits.push({
+          curse: {
+            id: `unhandled-promise-L${line}-${start}`,
+            ruleId: 'unhandled-promise',
+            title: 'Unhandled Promise Rejection (.then without .catch)',
+            description:
+              'Floating promise chains without rejection handlers trigger UnhandledPromiseRejection crashes.',
+            severity: 'MEDIUM',
+            category: 'ASYNC',
+            line,
+            snippet: getLineSnippet(sourceFile, start),
+            fixSummary: 'Attach .catch((err: unknown) => { throw err; }) rejection handler.',
+          },
+          start,
+          end,
+        });
+      }
+    }
+
+    // 11. Stray console.log
+    if (
+      ts.isExpressionStatement(node) &&
+      ts.isCallExpression(node.expression) &&
+      ts.isPropertyAccessExpression(node.expression.expression) &&
+      ts.isIdentifier(node.expression.expression.expression) &&
+      node.expression.expression.expression.text === 'console' &&
+      node.expression.expression.name.text === 'log'
+    ) {
+      const start = node.getFullStart();
+      const end = node.getEnd();
+      const line = getLine(sourceFile, node.getStart(sourceFile));
+      hits.push({
+        curse: {
+          id: `console-ghost-L${line}-${start}`,
+          ruleId: 'console-ghost',
+          title: 'Production Console Ghost (console.log)',
+          description:
+            'Unstructured console.log statements leak internal payloads in production telemetry.',
+          severity: 'LOW',
+          category: 'DEAD_CODE',
+          line,
+          snippet: getLineSnippet(sourceFile, node.getStart(sourceFile)),
+          fixSummary: 'Purge stray debug log statement.',
+        },
+        start,
+        end,
+      });
+    }
+
+    ts.forEachChild(node, scanPass2);
+  };
+
+  scanPass2(sourceFile);
+  // Also check end-of-file trailing comments (like zombie functions at bottom)
+  checkComments(sourceCode.length);
+
+  return {
+    sourceFile,
+    hits,
+    reassignedVars,
+    diagnostics,
+    cyclomaticComplexity,
+    functions,
+  };
+}
 
 const SEVERITY_WEIGHT: Record<CurseSeverity, number> = {
   CRITICAL: 22,
@@ -138,61 +599,30 @@ const SEVERITY_WEIGHT: Record<CurseSeverity, number> = {
 };
 
 /**
- * Performs static autopsy on source code, returning curses, vitality score,
- * 2D SVG topology graph nodes/edges, and Kiro policy hook statuses.
+ * Full AST-powered autopsy report including compiler diagnostics, vitality score,
+ * interactive 2D SVG topology graph, and Kiro policy hook telemetry.
  */
 export function analyzeCodeAutopsy(sourceCode: string): AutopsyReport {
+  const inspection = inspectAst(sourceCode);
+  const curses = inspection.hits.map((h) => h.curse);
   const lines = sourceCode.split(/\r?\n/);
-  const curses: Curse[] = [];
-  let complexity = 1;
 
-  lines.forEach((rawLine, index) => {
-    const lineNum = index + 1;
-    const trimmed = rawLine.trim();
+  const diagPenalty = inspection.diagnostics.filter((d) => d.category === 'error').length * 18;
+  const cursePenalty = curses.reduce((acc, c) => acc + SEVERITY_WEIGHT[c.severity], 0);
+  const vitalityScore = Math.max(0, Math.min(100, 100 - cursePenalty - diagPenalty));
 
-    if (/\b(?:if|else if|for|while|case|catch|\?\s*)\b|&&|\|\|/.test(trimmed)) {
-      complexity += 1;
-    }
+  const { nodes, edges } = buildTopologyGraph(inspection.functions, curses);
 
-    // Check unhandled promise only if file lacks .catch(
-    const hasCatchInFile = /\.catch\s*\(/.test(sourceCode);
-
-    for (const rule of CURSE_RULES) {
-      if (rule.ruleId === 'unhandled-promise' && hasCatchInFile) {
-        continue;
-      }
-      if (rule.pattern.test(rawLine)) {
-        curses.push({
-          id: `${rule.ruleId}-L${lineNum}`,
-          ruleId: rule.ruleId,
-          title: rule.title,
-          description: rule.description,
-          severity: rule.severity,
-          category: rule.category,
-          line: lineNum,
-          snippet: trimmed,
-          fixSummary: rule.fixSummary,
-        });
-      }
-    }
-  });
-
-  // Compute Vitality Score (0 - 100)
-  const penalty = curses.reduce((acc, c) => acc + SEVERITY_WEIGHT[c.severity], 0);
-  const vitalityScore = Math.max(0, Math.min(100, 100 - penalty));
-
-  // Build crisp 2D SVG topology nodes & edges
-  const { nodes, edges } = buildTopologyGraph(lines, curses);
-
-  // Evaluate Kiro Policy Hooks
   const hasRule = (id: string) => curses.some((c) => c.ruleId === id);
+  const hasErrors = inspection.diagnostics.some((d) => d.category === 'error');
+
   const policies: PolicyCheck[] = [
     {
       id: 'zero-eval-policy',
       label: 'zero-eval-policy',
       passed: !hasRule('no-eval-injection'),
       detail: hasRule('no-eval-injection')
-        ? 'Blocked: eval() / Function() detected'
+        ? 'Blocked: eval() / Function() AST node detected'
         : 'Verified: Zero arbitrary code execution',
     },
     {
@@ -200,7 +630,7 @@ export function analyzeCodeAutopsy(sourceCode: string): AutopsyReport {
       label: 'sql-parameterization',
       passed: !hasRule('sql-string-concat'),
       detail: hasRule('sql-string-concat')
-        ? 'Blocked: Unescaped SQL concatenation'
+        ? 'Blocked: Unescaped SQL binary concatenation'
         : 'Verified: Parameterized query safety',
     },
     {
@@ -217,27 +647,31 @@ export function analyzeCodeAutopsy(sourceCode: string): AutopsyReport {
       passed: !hasRule('loose-equality') && !hasRule('var-hoisting-leak'),
       detail:
         hasRule('loose-equality') || hasRule('var-hoisting-leak')
-          ? 'Warning: var or == coercion present'
+          ? 'Warning: var hoisting or == coercion present'
           : 'Verified: Block-scoped & strict equality',
     },
     {
       id: 'modern-async-flow',
       label: 'modern-async-flow',
-      passed: !hasRule('callback-pyramid') && !hasRule('unhandled-promise'),
-      detail:
-        hasRule('callback-pyramid') || hasRule('unhandled-promise')
-          ? 'Warning: Legacy callback / unhandled promise'
-          : 'Verified: Clean async/await control flow',
+      passed: !hasRule('callback-pyramid') && !hasRule('unhandled-promise') && !hasErrors,
+      detail: hasErrors
+        ? 'Blocked: TypeScript compiler syntax errors detected'
+        : hasRule('callback-pyramid') || hasRule('unhandled-promise')
+        ? 'Warning: Legacy callback / unhandled promise'
+        : 'Verified: Clean async flow & valid TS syntax',
     },
   ];
 
-  const estimatedDebtHours = Number((curses.length * 0.75 + complexity * 0.2).toFixed(1));
+  const estimatedDebtHours = Number(
+    (curses.length * 0.75 + inspection.cyclomaticComplexity * 0.2).toFixed(1)
+  );
 
   return {
     vitalityScore,
-    cyclomaticComplexity: complexity,
+    cyclomaticComplexity: inspection.cyclomaticComplexity,
     lineCount: lines.length,
     curses,
+    diagnostics: inspection.diagnostics,
     nodes,
     edges,
     policies,
@@ -246,59 +680,46 @@ export function analyzeCodeAutopsy(sourceCode: string): AutopsyReport {
 }
 
 function buildTopologyGraph(
-  lines: string[],
+  functions: { id: string; label: string; line: number; endLine: number }[],
   curses: Curse[]
 ): { nodes: GraphNode2D[]; edges: GraphEdge2D[] } {
   const nodes: GraphNode2D[] = [];
   const edges: GraphEdge2D[] = [];
 
-  // Entry node
   nodes.push({
     id: 'entry-module',
     label: 'Module Entry',
     kind: 'ENTRY',
     line: 1,
     x: 70,
-    y: 120,
+    y: 135,
   });
 
-  // Extract functions / classes
-  const fnMatches: { id: string; label: string; line: number }[] = [];
-  lines.forEach((line, idx) => {
-    const fnMatch = line.match(/(?:function\s+([a-zA-Z_$][\w$]*)|class\s+([a-zA-Z_$][\w$]*))/);
-    if (fnMatch) {
-      const name = fnMatch[1] || fnMatch[2];
-      fnMatches.push({
-        id: `fn-${name}-${idx + 1}`,
-        label: `${name}()`,
-        line: idx + 1,
-      });
-    }
-  });
+  const fnNodes =
+    functions.length > 0
+      ? functions.slice(0, 4)
+      : [{ id: 'fn-main', label: 'moduleScope()', line: 1, endLine: 9999 }];
 
-  if (fnMatches.length === 0) {
-    fnMatches.push({ id: 'fn-main', label: 'mainScope()', line: 1 });
-  }
-
-  fnMatches.slice(0, 4).forEach((fn, idx) => {
-    const yPos = 60 + idx * 75;
+  fnNodes.forEach((fn, idx) => {
+    const yPos = 60 + idx * 65;
     nodes.push({
       id: fn.id,
       label: fn.label,
       kind: 'FUNCTION',
       line: fn.line,
-      x: 245,
+      x: 250,
       y: yPos,
     });
     edges.push({
       id: `e-entry-${fn.id}`,
       from: 'entry-module',
       to: fn.id,
-      tainted: curses.some((c) => c.line >= fn.line && c.severity === 'CRITICAL'),
+      tainted: curses.some(
+        (c) => c.line >= fn.line && c.line <= fn.endLine && c.severity === 'CRITICAL'
+      ),
     });
   });
 
-  // Top curses as right-side sink/curse nodes (max 5 so SVG stays ultra-crisp)
   const topCurses = curses.slice(0, 5);
   if (topCurses.length === 0) {
     nodes.push({
@@ -306,10 +727,10 @@ function buildTopologyGraph(
       label: 'Pure Vessel (0 Curses)',
       kind: 'SINK',
       line: 1,
-      x: 455,
-      y: 120,
+      x: 470,
+      y: 135,
     });
-    fnMatches.slice(0, 4).forEach((fn) => {
+    fnNodes.forEach((fn) => {
       edges.push({
         id: `e-${fn.id}-clean`,
         from: fn.id,
@@ -319,7 +740,7 @@ function buildTopologyGraph(
     });
   } else {
     topCurses.forEach((curse, idx) => {
-      const yPos = 42 + idx * 54;
+      const yPos = 42 + idx * 52;
       const curseNodeId = `curse-${curse.id}`;
       nodes.push({
         id: curseNodeId,
@@ -327,17 +748,12 @@ function buildTopologyGraph(
         kind: 'CURSE',
         line: curse.line,
         severity: curse.severity,
-        x: 455,
+        x: 470,
         y: yPos,
       });
 
-      // Link from closest preceding function
-      let parentFn = fnMatches[0];
-      for (const fn of fnMatches.slice(0, 4)) {
-        if (fn.line <= curse.line) {
-          parentFn = fn;
-        }
-      }
+      const parentFn =
+        fnNodes.find((fn) => curse.line >= fn.line && curse.line <= fn.endLine) || fnNodes[0];
       edges.push({
         id: `e-${parentFn.id}-${curseNodeId}`,
         from: parentFn.id,

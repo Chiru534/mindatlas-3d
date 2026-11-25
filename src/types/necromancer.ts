@@ -19,6 +19,13 @@ export interface Curse {
   fixSummary: string;
 }
 
+export interface CompilerDiagnostic {
+  line: number;
+  code: number;
+  message: string;
+  category: 'error' | 'warning';
+}
+
 export interface GraphNode2D {
   id: string;
   label: string;
@@ -48,6 +55,7 @@ export interface AutopsyReport {
   cyclomaticComplexity: number;
   lineCount: number;
   curses: Curse[];
+  diagnostics: CompilerDiagnostic[];
   nodes: GraphNode2D[];
   edges: GraphEdge2D[];
   policies: PolicyCheck[];
@@ -65,6 +73,8 @@ export interface ResurrectionResult {
   resurrectedCode: string;
   appliedFixes: string[];
   diffLines: DiffLine[];
+  unifiedPatch: string;
+  mode: 'local-ast' | 'ai-assisted';
   beforeReport: AutopsyReport;
   afterReport: AutopsyReport;
 }
@@ -76,4 +86,9 @@ export interface LegacyPreset {
   tagline: string;
   language: string;
   code: string;
+}
+
+export interface AiProviderConfig {
+  provider: 'gemini' | 'openai';
+  apiKey: string;
 }

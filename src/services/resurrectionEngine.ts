@@ -1,185 +1,242 @@
+import * as ts from 'typescript';
 import { DiffLine, ResurrectionResult } from '../types/necromancer';
-import { analyzeCodeAutopsy } from './curseAnalyzer';
+import { analyzeCodeAutopsy, inspectAst } from './curseAnalyzer';
+
+interface TextEdit {
+  start: number;
+  end: number;
+  replacement: string;
+  label: string;
+}
 
 /**
- * Applies deterministic surgical patches to resurrect cursed legacy code
- * into modern, secure, strict TypeScript.
+ * Applies conflict-free, AST-offset surgical patches (codemod style)
+ * to transform legacy cursed code into clean, modern TypeScript.
  */
 export function resurrectCode(sourceCode: string, targetRuleId?: string): ResurrectionResult {
   const beforeReport = analyzeCodeAutopsy(sourceCode);
-  const appliedFixes: string[] = [];
-  let lines = sourceCode.split(/\r?\n/);
-
+  const inspection = inspectAst(sourceCode);
+  const edits: TextEdit[] = [];
   const shouldApply = (ruleId: string) => !targetRuleId || targetRuleId === ruleId;
 
-  // 1. Purge zombie commented-out code & TODO clutter
-  if (shouldApply('zombie-commented-code')) {
-    const filtered = lines.filter((line) => {
-      const isZombie = /^\s*\/\/\s*(?:function|var|const|let|eval\(|TODO:|}|\/\/)/.test(line);
-      if (isZombie && !appliedFixes.includes('Purged zombie commented-out code')) {
-        appliedFixes.push('Purged zombie commented-out code');
-      }
-      return !isZombie;
-    });
-    lines = filtered;
-  }
+  // Map SQL var names -> bound parameter expression so we can wire call sites too
+  const sqlVarBindings = new Map<string, string>();
 
-  // 2. Remove stray console.log ghosts
-  if (shouldApply('console-ghost')) {
-    lines = lines.filter((line) => {
-      if (/\bconsole\.log\s*\(/.test(line)) {
-        if (!appliedFixes.includes('Exorcised stray console.log telemetry')) {
-          appliedFixes.push('Exorcised stray console.log telemetry');
+  for (const hit of inspection.hits) {
+    const { curse, start, end, meta } = hit;
+    if (!shouldApply(curse.ruleId)) continue;
+
+    switch (curse.ruleId) {
+      case 'var-hoisting-leak': {
+        const kw = meta?.targetKeyword || 'const';
+        edits.push({
+          start,
+          end,
+          replacement: kw,
+          label: `Upgraded var declarations to block-scoped ${kw}`,
+        });
+        break;
+      }
+
+      case 'hardcoded-secret': {
+        const varName = meta?.varName || 'API_SECRET';
+        edits.push({
+          start,
+          end,
+          replacement: `process.env.${varName} ?? ""`,
+          label: 'Moved hardcoded secret to process.env',
+        });
+        break;
+      }
+
+      case 'no-eval-injection': {
+        let arg = meta?.argText || '""';
+        // Strip legacy `"(" + expr + ")"` JSONP-style eval wrapper
+        const parenWrap = arg.match(/^["'`]\(["'`]\s*\+\s*([^+]+?)\s*\+\s*["'`]\)["'`]$/);
+        if (parenWrap) {
+          arg = parenWrap[1].trim();
         }
-        return false;
+        edits.push({
+          start,
+          end,
+          replacement: `JSON.parse(String(${arg}))`,
+          label: 'Replaced eval() RCE vector with JSON.parse()',
+        });
+        break;
       }
-      return true;
-    });
-  }
 
-  // 3. Line-by-line surgical transformations
-  lines = lines.map((line) => {
-    let updated = line;
-
-    // Replace hardcoded secrets with env lookups
-    if (
-      shouldApply('hardcoded-secret') &&
-      /(?:API_SECRET|STRIPE_KEY|SECRET_KEY|PASSWORD|TOKEN)\s*=\s*["'][^"']{6,}["']/i.test(updated)
-    ) {
-      updated = updated.replace(
-        /\b(?:var|const|let)\s+([A-Z0-9_]+)\s*=\s*["'][^"']+["']/,
-        'const $1 = process.env.$1 ?? ""'
-      );
-      if (!appliedFixes.includes('Moved hardcoded secret to process.env')) {
-        appliedFixes.push('Moved hardcoded secret to process.env');
-      }
-    }
-
-    // Replace eval(...) with safe JSON.parse(...)
-    if (shouldApply('no-eval-injection') && /\beval\s*\(/.test(updated)) {
-      updated = updated.replace(
-        /eval\s*\(\s*["'`]\(["'`]\s*\+\s*([^+]+?)\s*\+\s*["'`]\)["'`]\s*\)/g,
-        'JSON.parse(String($1))'
-      );
-      updated = updated.replace(/\beval\s*\(([^)]+)\)/g, 'JSON.parse(String($1))');
-      if (!appliedFixes.includes('Replaced eval() RCE vector with JSON.parse()')) {
-        appliedFixes.push('Replaced eval() RCE vector with JSON.parse()');
-      }
-    }
-
-    // Parameterize SQL concatenation
-    if (
-      shouldApply('sql-string-concat') &&
-      /(?:"(?:SELECT|INSERT|UPDATE|DELETE)\b[^"]*"|'(?:SELECT|INSERT|UPDATE|DELETE)\b[^']*'|`(?:SELECT|INSERT|UPDATE|DELETE)\b[^`]*`)\s*\+/i.test(
-        updated
-      )
-    ) {
-      updated = updated.replace(
-        /=\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)\s*\+\s*([a-zA-Z0-9_.$]+)(?:\s*\+\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`))?/,
-        (_m, d1, s1, b1, varName) => {
-          const baseSql = (d1 || s1 || b1 || '').replace(/'\s*$/, '').trim();
-          return `= "${baseSql} $1"; const queryParams = [${varName}]`;
+      case 'sql-string-concat': {
+        const baseSql = meta?.baseSql || 'SELECT * FROM table WHERE id =';
+        const paramExpr = meta?.paramExpr || 'input';
+        const sqlVarName = meta?.sqlVarName || '';
+        if (sqlVarName) {
+          sqlVarBindings.set(sqlVarName, paramExpr);
         }
-      );
-      if (!appliedFixes.includes('Parameterized SQL query to block SQLi')) {
-        appliedFixes.push('Parameterized SQL query to block SQLi');
+        edits.push({
+          start,
+          end,
+          replacement: `"${baseSql} $1"`,
+          label: 'Parameterized SQL query ($1) and bound query parameters',
+        });
+        break;
       }
-    }
 
-    // Replace innerHTML / dangerouslySetInnerHTML
-    if (shouldApply('dom-xss-sink')) {
-      if (/\.innerHTML\s*=/.test(updated)) {
-        updated = updated.replace(/\.innerHTML\s*=/g, '.textContent =');
-        if (!appliedFixes.includes('Replaced innerHTML XSS sink with textContent')) {
-          appliedFixes.push('Replaced innerHTML XSS sink with textContent');
+      case 'dom-xss-sink': {
+        if (meta?.xssKind === 'innerHTML') {
+          edits.push({
+            start,
+            end,
+            replacement: 'textContent',
+            label: 'Replaced .innerHTML XSS sink with .textContent',
+          });
+        } else if (meta?.xssKind === 'jsx') {
+          const tag = meta.tagName || 'div';
+          const expr = meta.expr || '""';
+          edits.push({
+            start,
+            end,
+            replacement: `<${tag}>{String(${expr})}</${tag}>`,
+            label: 'Removed dangerouslySetInnerHTML XSS sink',
+          });
         }
+        break;
       }
-      if (/dangerouslySetInnerHTML=\{\{\s*__html:\s*([^}]+)\}\}/.test(updated)) {
-        updated = updated.replace(
-          /<div\s+dangerouslySetInnerHTML=\{\{\s*__html:\s*([^}]+)\}\}\s*\/>/,
-          '<div>{String($1)}</div>'
+
+      case 'loose-equality': {
+        const op = meta?.replacement || '===';
+        edits.push({
+          start,
+          end,
+          replacement: op,
+          label: 'Enforced strict equality (=== / !==)',
+        });
+        break;
+      }
+
+      case 'unsafe-react-lifecycle': {
+        edits.push({
+          start,
+          end,
+          replacement: 'componentDidMount',
+          label: 'Migrated deprecated UNSAFE_componentWillMount lifecycle',
+        });
+        break;
+      }
+
+      case 'callback-pyramid': {
+        const slice = sourceCode.slice(start, end).trim();
+        const paramPart = slice.replace(/^function\s*/, '');
+        edits.push({
+          start,
+          end,
+          replacement: `${paramPart} => `,
+          label: 'Modernized legacy callback signature to arrow handler',
+        });
+        break;
+      }
+
+      case 'unhandled-promise': {
+        const originalCall = sourceCode.slice(start, end);
+        const arrowFixed = originalCall.replace(
+          /\.then\s*\(\s*function\s*\(([^)]*)\)/g,
+          '.then(($1) =>'
         );
-        if (!appliedFixes.includes('Removed dangerouslySetInnerHTML XSS sink')) {
-          appliedFixes.push('Removed dangerouslySetInnerHTML XSS sink');
+        edits.push({
+          start,
+          end,
+          replacement: `${arrowFixed}.catch((err: unknown) => { throw err; })`,
+          label: 'Added rejection .catch() handler to promise chain',
+        });
+        break;
+      }
+
+      case 'console-ghost':
+      case 'zombie-commented-code': {
+        edits.push({
+          start,
+          end,
+          replacement: '',
+          label:
+            curse.ruleId === 'console-ghost'
+              ? 'Exorcised stray console.log telemetry'
+              : 'Purged zombie commented-out code',
+        });
+        break;
+      }
+    }
+  }
+
+  // Also wire db.query(query, cb) -> db.query(query, [param], cb) when SQL var was parameterized
+  if (sqlVarBindings.size > 0) {
+    const visitSqlCallSites = (node: ts.Node) => {
+      if (ts.isCallExpression(node) && node.arguments.length >= 1) {
+        const firstArg = node.arguments[0];
+        if (ts.isIdentifier(firstArg) && sqlVarBindings.has(firstArg.text)) {
+          const boundParam = sqlVarBindings.get(firstArg.text)!;
+          // Insert `[boundParam]` right after firstArg
+          const insertPos = firstArg.getEnd();
+          edits.push({
+            start: insertPos,
+            end: insertPos,
+            replacement: `, [${boundParam}]`,
+            label: 'Parameterized SQL query ($1) and bound query parameters',
+          });
         }
       }
-    }
-
-    // Replace var -> const
-    if (shouldApply('var-hoisting-leak') && /^\s*var\s+/.test(updated)) {
-      updated = updated.replace(/^(\s*)var\s+/, '$1const ');
-      if (!appliedFixes.includes('Upgraded var declarations to block-scoped const')) {
-        appliedFixes.push('Upgraded var declarations to block-scoped const');
-      }
-    }
-
-    // Replace == / != with === / !==
-    if (shouldApply('loose-equality') && /[^=!<>]==[^=]|[^!]!=[^=]/.test(updated)) {
-      updated = updated.replace(/([^=!<>])==([^=])/g, '$1===$2');
-      updated = updated.replace(/([^!])!=([^=])/g, '$1!==$2');
-      if (!appliedFixes.includes('Enforced strict equality (=== / !==)')) {
-        appliedFixes.push('Enforced strict equality (=== / !==)');
-      }
-    }
-
-    // Modernize UNSAFE_componentWillMount
-    if (
-      shouldApply('unsafe-react-lifecycle') &&
-      /\b(?:UNSAFE_componentWillMount|componentWillMount)\s*\(\)/.test(updated)
-    ) {
-      updated = updated.replace(
-        /\b(?:UNSAFE_componentWillMount|componentWillMount)\s*\(\)/,
-        'componentDidMount()'
-      );
-      if (!appliedFixes.includes('Migrated deprecated UNSAFE_componentWillMount')) {
-        appliedFixes.push('Migrated deprecated UNSAFE_componentWillMount');
-      }
-    }
-
-    // Modernize callback / unhandled promise markers
-    if (
-      shouldApply('callback-pyramid') &&
-      /function\s*\(\s*(?:err|saveErr|e)\b/.test(updated)
-    ) {
-      updated = updated.replace(/function\s*\(([^)]*)\)/, 'async ($1) =>');
-      if (!appliedFixes.includes('Modernized legacy callback to async arrow handler')) {
-        appliedFixes.push('Modernized legacy callback to async arrow handler');
-      }
-    }
-
-    if (shouldApply('unhandled-promise') && /\.then\s*\(/.test(updated)) {
-      updated = updated.replace(/\.then\s*\(\s*function\s*\(([^)]*)\)/, '.then(($1) =>');
-      if (!appliedFixes.includes('Modernized promise chain & added rejection guard')) {
-        appliedFixes.push('Modernized promise chain & added rejection guard');
-      }
-    }
-
-    return updated;
-  });
-
-  // If unhandled-promise was fixed, ensure a .catch exists if .then still present
-  let resurrectedCode = lines.join('\n');
-  if (
-    shouldApply('unhandled-promise') &&
-    /\.then\s*\(/.test(resurrectedCode) &&
-    !/\.catch\s*\(/.test(resurrectedCode)
-  ) {
-    resurrectedCode = resurrectedCode.replace(
-      /(\.then\([^;]+\));/,
-      '$1.catch((err: unknown) => { throw err; });'
-    );
+      ts.forEachChild(node, visitSqlCallSites);
+    };
+    visitSqlCallSites(inspection.sourceFile);
   }
+
+  // Sort edits right-to-left (highest start offset first) and filter overlaps
+  edits.sort((a, b) => b.start - a.start || b.end - a.end);
+
+  let resurrectedCode = sourceCode;
+  let lastStart = Infinity;
+  const appliedFixSet = new Set<string>();
+
+  for (const edit of edits) {
+    if (edit.end > lastStart) continue; // skip nested/overlapping edits safely
+    resurrectedCode =
+      resurrectedCode.slice(0, edit.start) +
+      edit.replacement +
+      resurrectedCode.slice(edit.end);
+    lastStart = edit.start;
+    appliedFixSet.add(edit.label);
+  }
+
+  // Normalize trailing/collapsed blank lines cleanly
+  resurrectedCode = resurrectedCode.replace(/\n{3,}/g, '\n\n').trim() + '\n';
 
   const afterReport = analyzeCodeAutopsy(resurrectedCode);
   const diffLines = computeLineDiff(sourceCode, resurrectedCode);
+  const unifiedPatch = buildUnifiedPatch(diffLines, 'specimen.ts');
 
   return {
     resurrectedCode,
-    appliedFixes,
+    appliedFixes: Array.from(appliedFixSet),
     diffLines,
+    unifiedPatch,
+    mode: 'local-ast',
     beforeReport,
     afterReport,
   };
+}
+
+/**
+ * Generates a standard git-compatible unified diff patch.
+ */
+export function buildUnifiedPatch(diffLines: DiffLine[], fileName = 'specimen.ts'): string {
+  const header = `--- a/${fileName}\n+++ b/${fileName}\n@@ -1,${
+    diffLines.filter((d) => d.type !== 'added').length
+  } +1,${diffLines.filter((d) => d.type !== 'removed').length} @@`;
+  const body = diffLines
+    .map((d) => {
+      const prefix = d.type === 'added' ? '+' : d.type === 'removed' ? '-' : ' ';
+      return `${prefix}${d.content}`;
+    })
+    .join('\n');
+  return `${header}\n${body}\n`;
 }
 
 /**
