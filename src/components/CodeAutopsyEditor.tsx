@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Code2,
   GitCompare,
@@ -42,7 +42,15 @@ export const CodeAutopsyEditor: React.FC<CodeAutopsyEditorProps> = ({
   eraLabel,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lines = code.split(/\r?\n/);
+
+  useEffect(() => {
+    if (viewMode === 'editor' && highlightedLine !== null && scrollContainerRef.current) {
+      const targetTop = Math.max(0, (highlightedLine - 3) * 24);
+      scrollContainerRef.current.scrollTo({ top: targetTop, behavior: 'smooth' });
+    }
+  }, [highlightedLine, viewMode]);
 
   const cursesByLine = new Map<number, Curse[]>();
   curses.forEach((c) => {
@@ -141,44 +149,13 @@ export const CodeAutopsyEditor: React.FC<CodeAutopsyEditorProps> = ({
 
       {/* Main Content */}
       {viewMode === 'editor' ? (
-        <div className="relative flex-1 overflow-auto font-mono text-xs leading-6 flex">
-          {/* Gutter */}
-          <div className="shrink-0 py-3 px-2 bg-[#070a10] border-r border-slate-800/70 select-none text-right min-w-[3.25rem]">
-            {lines.map((_, idx) => {
-              const lineNum = idx + 1;
-              const lineCurses = cursesByLine.get(lineNum);
-              const isHighlighted = highlightedLine === lineNum;
-              const hasCritical = lineCurses?.some((c) => c.severity === 'CRITICAL');
-
-              return (
-                <div
-                  key={lineNum}
-                  className={`h-6 flex items-center justify-end gap-1.5 pr-1 rounded-l ${
-                    isHighlighted
-                      ? 'bg-violet-500/25 text-violet-200 font-bold'
-                      : lineCurses
-                      ? hasCritical
-                        ? 'text-rose-400 font-semibold'
-                        : 'text-amber-400'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  {lineCurses && (
-                    <AlertTriangle
-                      className={`w-3 h-3 shrink-0 ${
-                        hasCritical ? 'text-rose-500' : 'text-amber-400'
-                      }`}
-                    />
-                  )}
-                  <span>{lineNum}</span>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Editable Textarea + Highlight Backdrop */}
-          <div className="relative flex-1 min-w-0">
-            <div className="absolute inset-0 py-3 pointer-events-none">
+        <div
+          ref={scrollContainerRef}
+          className="relative flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs leading-6"
+        >
+          <div className="flex items-stretch min-h-full">
+            {/* Gutter — moves in 1:1 vertical lockstep with code */}
+            <div className="shrink-0 py-3 pb-7 px-2 bg-[#070a10] border-r border-slate-800/70 select-none text-right min-w-[3.25rem]">
               {lines.map((_, idx) => {
                 const lineNum = idx + 1;
                 const lineCurses = cursesByLine.get(lineNum);
@@ -188,27 +165,65 @@ export const CodeAutopsyEditor: React.FC<CodeAutopsyEditorProps> = ({
                 return (
                   <div
                     key={lineNum}
-                    className={`h-6 w-full ${
+                    className={`h-6 flex items-center justify-end gap-1.5 pr-1 rounded-l ${
                       isHighlighted
-                        ? 'bg-violet-500/15 border-l-2 border-violet-400'
+                        ? 'bg-violet-500/25 text-violet-200 font-bold'
                         : lineCurses
                         ? hasCritical
-                          ? 'bg-rose-500/10'
-                          : 'bg-amber-500/5'
-                        : ''
+                          ? 'text-rose-400 font-semibold'
+                          : 'text-amber-400'
+                        : 'text-slate-600'
                     }`}
-                  />
+                  >
+                    {lineCurses && (
+                      <AlertTriangle
+                        className={`w-3 h-3 shrink-0 ${
+                          hasCritical ? 'text-rose-500' : 'text-amber-400'
+                        }`}
+                      />
+                    )}
+                    <span>{lineNum}</span>
+                  </div>
                 );
               })}
             </div>
 
-            <textarea
-              value={code}
-              onChange={(e) => onChangeCode(e.target.value)}
-              spellCheck={false}
-              aria-label="Legacy Code Editor"
-              className="relative z-10 w-full h-full min-h-full py-3 px-4 bg-transparent text-slate-200 font-mono text-xs leading-6 resize-none focus:outline-none whitespace-pre overflow-x-auto select-text"
-            />
+            {/* Editable Textarea + Highlight Backdrop */}
+            <div className="relative flex-1 min-w-0">
+              <div className="absolute inset-x-0 top-0 py-3 pointer-events-none">
+                {lines.map((_, idx) => {
+                  const lineNum = idx + 1;
+                  const lineCurses = cursesByLine.get(lineNum);
+                  const isHighlighted = highlightedLine === lineNum;
+                  const hasCritical = lineCurses?.some((c) => c.severity === 'CRITICAL');
+
+                  return (
+                    <div
+                      key={lineNum}
+                      className={`h-6 w-full ${
+                        isHighlighted
+                          ? 'bg-violet-500/15 border-l-2 border-violet-400'
+                          : lineCurses
+                          ? hasCritical
+                            ? 'bg-rose-500/10'
+                            : 'bg-amber-500/5'
+                          : ''
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+
+              <textarea
+                value={code}
+                onChange={(e) => onChangeCode(e.target.value)}
+                spellCheck={false}
+                wrap="off"
+                aria-label="Legacy Code Editor"
+                style={{ height: `${lines.length * 24 + 40}px` }}
+                className="relative z-10 block w-full min-h-full pt-3 pb-7 px-4 bg-transparent text-slate-200 font-mono text-xs leading-6 resize-none focus:outline-none whitespace-pre overflow-x-auto overflow-y-hidden select-text"
+              />
+            </div>
           </div>
         </div>
       ) : viewMode === 'split' ? (
