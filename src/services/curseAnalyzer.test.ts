@@ -50,6 +50,18 @@ describe('DeadCode Necromancer — TypeScript AST Analyzer & Resurrection Codemo
     expect(result.diffLines.some((d) => d.type === 'removed')).toBe(true);
   });
 
+  it('resurrects Preset 4 (SQL + unhandled promise + empty if-block) to 100% vitality in one click', () => {
+    const haunted = LEGACY_PRESETS[3].code;
+    const result = resurrectCode(haunted);
+
+    expect(result.afterReport.vitalityScore).toBe(100);
+    expect(result.afterReport.curses.length).toBe(0);
+    expect(result.afterReport.policies.every((p) => p.passed)).toBe(true);
+    expect(result.afterReport.diagnostics.filter((d) => d.category === 'error').length).toBe(0);
+    expect(result.resurrectedCode).toContain('.catch(');
+    expect(result.resurrectedCode).not.toMatch(/if\s*\([^)]+\)\s*\{\s*\}/);
+  });
+
   it('reports real TypeScript compiler syntax diagnostics on broken code', () => {
     const broken = `function broken( { return 123;`;
     const report = analyzeCodeAutopsy(broken);

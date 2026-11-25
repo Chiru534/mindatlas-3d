@@ -691,7 +691,7 @@ function buildTopologyGraph(
     label: 'Module Entry',
     kind: 'ENTRY',
     line: 1,
-    x: 70,
+    x: 82,
     y: 135,
   });
 
@@ -701,13 +701,13 @@ function buildTopologyGraph(
       : [{ id: 'fn-main', label: 'moduleScope()', line: 1, endLine: 9999 }];
 
   fnNodes.forEach((fn, idx) => {
-    const yPos = 60 + idx * 65;
+    const yPos = 60 + idx * 62;
     nodes.push({
       id: fn.id,
       label: fn.label,
       kind: 'FUNCTION',
       line: fn.line,
-      x: 250,
+      x: 270,
       y: yPos,
     });
     edges.push({
@@ -720,14 +720,24 @@ function buildTopologyGraph(
     });
   });
 
-  const topCurses = curses.slice(0, 5);
-  if (topCurses.length === 0) {
+  // Prioritize CRITICAL & HIGH curses in the topology graph
+  const severityRank: Record<CurseSeverity, number> = {
+    CRITICAL: 0,
+    HIGH: 1,
+    MEDIUM: 2,
+    LOW: 3,
+  };
+  const prioritizedCurses = [...curses]
+    .sort((a, b) => severityRank[a.severity] - severityRank[b.severity] || a.line - b.line)
+    .slice(0, 5);
+
+  if (prioritizedCurses.length === 0) {
     nodes.push({
       id: 'clean-vessel',
       label: 'Pure Vessel (0 Curses)',
       kind: 'SINK',
       line: 1,
-      x: 470,
+      x: 495,
       y: 135,
     });
     fnNodes.forEach((fn) => {
@@ -739,7 +749,7 @@ function buildTopologyGraph(
       });
     });
   } else {
-    topCurses.forEach((curse, idx) => {
+    prioritizedCurses.forEach((curse, idx) => {
       const yPos = 42 + idx * 52;
       const curseNodeId = `curse-${curse.id}`;
       nodes.push({
@@ -748,15 +758,17 @@ function buildTopologyGraph(
         kind: 'CURSE',
         line: curse.line,
         severity: curse.severity,
-        x: 470,
+        x: 495,
         y: yPos,
       });
 
-      const parentFn =
-        fnNodes.find((fn) => curse.line >= fn.line && curse.line <= fn.endLine) || fnNodes[0];
+      // Match innermost enclosing function/method; fallback to Module Entry if top-level
+      const matchingFns = fnNodes.filter((fn) => curse.line >= fn.line && curse.line <= fn.endLine);
+      const parentId =
+        matchingFns.length > 0 ? matchingFns[matchingFns.length - 1].id : 'entry-module';
       edges.push({
-        id: `e-${parentFn.id}-${curseNodeId}`,
-        from: parentFn.id,
+        id: `e-${parentId}-${curseNodeId}`,
+        from: parentId,
         to: curseNodeId,
         tainted: curse.severity === 'CRITICAL' || curse.severity === 'HIGH',
       });

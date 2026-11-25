@@ -113,7 +113,7 @@ export const TopBar: React.FC<TopBarProps> = ({
 
   return (
     <>
-      <header className="h-14 shrink-0 border-b border-slate-800/90 bg-[#0b0f17] px-3 sm:px-4 flex items-center justify-between gap-2 overflow-x-auto">
+      <header className="min-h-14 shrink-0 border-b border-slate-800/90 bg-[#0b0f17] px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2">
         {/* Brand */}
         <div className="flex items-center gap-2.5 min-w-0 shrink-0">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-violet-950/50 shrink-0">
@@ -140,7 +140,7 @@ export const TopBar: React.FC<TopBarProps> = ({
             aria-label="Select Legacy Specimen"
             value={activePresetId}
             onChange={(e) => onSelectPreset(e.target.value)}
-            className="bg-slate-900 border border-slate-700/80 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-violet-500 cursor-pointer max-w-[180px]"
+            className="bg-slate-900 border border-slate-700/80 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-violet-500 cursor-pointer max-w-[175px] truncate whitespace-nowrap"
           >
             {presets.map((p) => (
               <option key={p.id} value={p.id}>
@@ -270,7 +270,12 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* GitHub Raw Import Modal */}
       {showGithubModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Import Legacy File from GitHub"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        >
           <form
             onSubmit={handleGithubSubmit}
             className="w-full max-w-md bg-[#0b0f17] border border-slate-800 rounded-xl p-4 space-y-3 shadow-2xl"
@@ -282,6 +287,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
               <button
                 type="button"
+                aria-label="Close GitHub import modal"
                 onClick={() => setShowGithubModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >
@@ -328,7 +334,12 @@ export const TopBar: React.FC<TopBarProps> = ({
 
       {/* Optional BYOK AI Configuration Modal */}
       {showAiModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Resurrection Engine Mode"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        >
           <form
             onSubmit={handleSaveAi}
             className="w-full max-w-md bg-[#0b0f17] border border-slate-800 rounded-xl p-4 space-y-3 shadow-2xl"
@@ -340,6 +351,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               </div>
               <button
                 type="button"
+                aria-label="Close AI configuration modal"
                 onClick={() => setShowAiModal(false)}
                 className="text-slate-400 hover:text-white cursor-pointer"
               >

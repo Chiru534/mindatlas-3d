@@ -199,7 +199,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#07090e] text-slate-100 overflow-hidden">
+    <div className="min-h-screen lg:h-screen w-full flex flex-col bg-[#07090e] text-slate-100 lg:overflow-hidden">
       <TopBar
         presets={LEGACY_PRESETS}
         activePresetId={activePresetId}
@@ -235,10 +235,10 @@ export const App: React.FC = () => {
       )}
 
       {/* Main 2D Studio Grid */}
-      <main className="flex-1 min-h-0 p-3 grid grid-cols-1 lg:grid-cols-12 gap-3">
+      <main className="flex-1 lg:min-h-0 p-3 flex flex-col lg:grid lg:grid-cols-12 gap-3 lg:overflow-hidden">
         {/* Left/Center: Code Editor + 2D SVG Call & Taint Topology */}
-        <div className="lg:col-span-8 flex flex-col gap-3 min-h-0">
-          <div className="flex-[3] min-h-0">
+        <div className="lg:col-span-8 flex flex-col gap-3 lg:min-h-0">
+          <div className="h-[340px] lg:h-auto lg:flex-[3] lg:min-h-0">
             <CodeAutopsyEditor
               fileName={fileName}
               code={code}
@@ -256,7 +256,7 @@ export const App: React.FC = () => {
             />
           </div>
 
-          <div className="flex-[2] min-h-[200px]">
+          <div className="h-[220px] lg:h-auto lg:flex-[2] lg:min-h-[200px]">
             <AutopsyGraph2D
               nodes={report.nodes}
               edges={report.edges}
@@ -271,7 +271,7 @@ export const App: React.FC = () => {
         </div>
 
         {/* Right: Curse & Kiro Policy Inspector */}
-        <div className="lg:col-span-4 min-h-0">
+        <div className="h-[480px] lg:h-auto lg:col-span-4 lg:min-h-0">
           <CurseInspectorPanel
             report={report}
             beforeVitality={beforeVitality}

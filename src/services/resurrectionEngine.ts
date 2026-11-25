@@ -136,15 +136,11 @@ export function resurrectCode(sourceCode: string, targetRuleId?: string): Resurr
       }
 
       case 'unhandled-promise': {
-        const originalCall = sourceCode.slice(start, end);
-        const arrowFixed = originalCall.replace(
-          /\.then\s*\(\s*function\s*\(([^)]*)\)/g,
-          '.then(($1) =>'
-        );
+        // Append .catch at the exact end of the .then(...) CallExpression so inner SQL call-site edits do not overlap
         edits.push({
-          start,
+          start: end,
           end,
-          replacement: `${arrowFixed}.catch((err: unknown) => { throw err; })`,
+          replacement: `.catch((err: unknown) => { console.error(err); })`,
           label: 'Added rejection .catch() handler to promise chain',
         });
         break;
@@ -205,8 +201,11 @@ export function resurrectCode(sourceCode: string, targetRuleId?: string): Resurr
     appliedFixSet.add(edit.label);
   }
 
-  // Normalize trailing/collapsed blank lines cleanly
-  resurrectedCode = resurrectedCode.replace(/\n{3,}/g, '\n\n').trim() + '\n';
+  // Normalize blank lines and strip empty if-blocks left after removing dead console.log statements
+  resurrectedCode = resurrectedCode
+    .replace(/\n\s*if\s*\([^)]+\)\s*\{\s*\n?\s*\}/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
   const afterReport = analyzeCodeAutopsy(resurrectedCode);
   const diffLines = computeLineDiff(sourceCode, resurrectedCode);

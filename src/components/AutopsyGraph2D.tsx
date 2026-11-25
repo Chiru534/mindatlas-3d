@@ -36,7 +36,7 @@ export const AutopsyGraph2D: React.FC<AutopsyGraph2DProps> = ({
       {/* Crisp Interactive SVG Canvas */}
       <div className="relative flex-1 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:18px_18px] overflow-hidden">
         <svg
-          viewBox="0 0 600 280"
+          viewBox="0 0 640 280"
           className="w-full h-full"
           preserveAspectRatio="xMidYMid meet"
         >
@@ -71,9 +71,12 @@ export const AutopsyGraph2D: React.FC<AutopsyGraph2DProps> = ({
             const to = nodeMap.get(edge.to);
             if (!from || !to) return null;
 
-            const x1 = from.x + 62;
+            const halfWFrom = from.kind === 'CURSE' || from.kind === 'SINK' ? 84 : 66;
+            const halfWTo = to.kind === 'CURSE' || to.kind === 'SINK' ? 84 : 66;
+
+            const x1 = from.x + halfWFrom;
             const y1 = from.y;
-            const x2 = to.x - 62;
+            const x2 = to.x - halfWTo;
             const y2 = to.y;
             const cx1 = x1 + (x2 - x1) * 0.5;
             const cx2 = x2 - (x2 - x1) * 0.5;
@@ -106,8 +109,10 @@ export const AutopsyGraph2D: React.FC<AutopsyGraph2DProps> = ({
                 ? { fill: '#131129', stroke: '#8b5cf6', text: '#c4b5fd' }
                 : { fill: '#0c1626', stroke: '#38bdf8', text: '#bae6fd' };
 
+            const boxW = node.kind === 'CURSE' || node.kind === 'SINK' ? 168 : 132;
+            const maxChars = node.kind === 'CURSE' || node.kind === 'SINK' ? 24 : 18;
             const shortLabel =
-              node.label.length > 18 ? `${node.label.slice(0, 16)}..` : node.label;
+              node.label.length > maxChars ? `${node.label.slice(0, maxChars - 2)}..` : node.label;
 
             return (
               <g
@@ -117,9 +122,9 @@ export const AutopsyGraph2D: React.FC<AutopsyGraph2DProps> = ({
                 className="cursor-pointer group"
               >
                 <rect
-                  x={-62}
+                  x={-boxW / 2}
                   y={-18}
-                  width={124}
+                  width={boxW}
                   height={36}
                   rx={8}
                   fill={palette.fill}
@@ -131,7 +136,7 @@ export const AutopsyGraph2D: React.FC<AutopsyGraph2DProps> = ({
                   y={4}
                   textAnchor="middle"
                   fill={palette.text}
-                  fontSize="10.5"
+                  fontSize="10"
                   fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
                   fontWeight="600"
                 >

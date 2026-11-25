@@ -99,6 +99,8 @@ export const CodeAutopsyEditor: React.FC<CodeAutopsyEditorProps> = ({
         <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
           <button
             onClick={() => onChangeViewMode('editor')}
+            aria-label="Source View"
+            title="Source View"
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
               viewMode === 'editor'
                 ? 'bg-slate-800 text-white shadow-sm'
@@ -110,6 +112,8 @@ export const CodeAutopsyEditor: React.FC<CodeAutopsyEditorProps> = ({
           </button>
           <button
             onClick={() => onChangeViewMode('split')}
+            aria-label="Split Diff View"
+            title="Split Diff View"
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
               viewMode === 'split'
                 ? 'bg-violet-500/20 text-violet-200 border border-violet-500/30'
@@ -121,6 +125,8 @@ export const CodeAutopsyEditor: React.FC<CodeAutopsyEditorProps> = ({
           </button>
           <button
             onClick={() => onChangeViewMode('diff')}
+            aria-label="Unified Diff View"
+            title="Unified Diff View"
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
               viewMode === 'diff'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
